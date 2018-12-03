@@ -22,14 +22,15 @@ library(lmerTest)
 library(boot)
 
 # load preprocessed data
-orig.sample <- read.csv("/Volumes/emberson/ResearchProjects/Pupillometry/VExP/V1/data/VEXP_1-6_Infant_Preprocessed_RemovedTrackloss.csv")
+orig.sample <- read.csv("/Volumes/emberson/ResearchProjects/Pupillometry/VExP/V1/data/VEXP_1-6_Preprocessed.csv")
 orig.sample$X <- NULL
-
-#relabel training pupil corrected from 999 to NA
-orig.sample$PUPIL_CORRECTED[orig.sample$phase==0] <- NA
 ```
 
-Important information
+### Important information
+
+## Changes from V1:
+- Data analysis using both PUPIL_CORRECTED and PUPIL_CORRECTED2
+- Data analysis using only conservative coding of lookingattarget
 
 Trial
 0 = Blank (0-1200)
@@ -76,11 +77,33 @@ ggplot(v1,aes(x=factor(subID),y=percentcompleted))+
   theme(plot.title = element_text(face="bold", size=20, hjust=0))+
   theme(axis.title = element_text(face="bold", size=20))+ 
   theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
   theme(legend.position="none")+
   theme(plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(labels = scales::percent,limits=c(0,1),breaks=seq(0,1,.1))+
   geom_hline(yintercept = 0.5, color="red",size=1.5)
+
+##### USING PUPIL_CORRECTED2
+# calculate percent missing
+v2 <- group_by(test, subID) %>%
+  summarize(percentmissing = length(which(is.na(PUPIL_CORRECTED2))) / length(PUPIL_CORRECTED2),
+            percentcompleted = 1 - percentmissing)
+
+# plot
+ggplot(v2,aes(x=factor(subID),y=percentcompleted))+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+  geom_bar(stat="identity")+
+  labs(x = "Subject ID", y = "% of data")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  theme(legend.position="none")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(labels = scales::percent,limits=c(0,1),breaks=seq(0,1,.1))+
+  geom_hline(yintercept = 0.5, color="red",size=1.5)
+
+#THE TWO RESULT IN THE SAME % OF DATA, GOOD!
 ```
 
 Percentage of test phase data we have for each subject (good trials/total trials)
@@ -106,7 +129,7 @@ ggplot(foo,aes(x=factor(subID),y=percenttrials))+
   theme(plot.title = element_text(face="bold", size=20, hjust=0))+
   theme(axis.title = element_text(face="bold", size=20))+ 
   theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
   theme(legend.position="none")+
   theme(plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(labels = scales::percent,limits=c(0,1),breaks=seq(0,1,.1))+
@@ -131,280 +154,7 @@ REMOVE BAD TRIALS (trials with < 50% missing data)
 orig.sample.a <- subset(orig.sample.a, trackloss < 0.5)
 ```
 
-Number of trials we have for each condition 
-```{r}
-# get test phase data
-foo <- subset(orig.sample.a, phase==1)
-
-# calculate number of good trials
-foo2 <- group_by(foo, subID, condition) %>%
-  summarize(numtrials = length(unique(TRIAL_INDEX_RECODE))
-            )
-
-# calculate mean and SE
-foo3 <- group_by(foo2, condition) %>%
-  summarise(
-    meantrials=mean(numtrials,na.rm = TRUE),
-    setrials=sd(numtrials, na.rm = TRUE)/sqrt(length(numtrials))
-  )
-
-# plot
-limits <- aes(ymax = meantrials + setrials, ymin=meantrials - setrials)
-
-ggplot(foo3,aes(x=factor(condition),y=meantrials,fill=factor(condition),color=factor(condition)))+
-  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  geom_bar(stat="identity")+
-  labs(x = "Condition", y = "Number of trials (max=40)")+
-  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
-  theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
-  theme(legend.position="none")+
-  theme(plot.title = element_text(hjust = 0.5))+
-  scale_x_discrete(breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
-  scale_y_continuous(limits=c(0,40),breaks=seq(0,40,10))+
-  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
-  scale_fill_brewer(palette="Accent")+
-  scale_color_brewer(palette="Accent")+
-  theme(legend.position="none")
-```
-
-Comparing looking at target criteria (liberal vs conservative)
-```{r}
-# calculate percent looking for conservative
-goo <- group_by(orig.sample.a, subID, TRIAL_INDEX_RECODE, trial) %>%
-  summarise(
-    percentlooking=length(which(lookattarget==1))/length(which(lookattarget!=9)),
-    type = 0
-  )
-
-# calculate percent looking for liberal
-goo2 <- group_by(orig.sample.a, subID, TRIAL_INDEX_RECODE, trial) %>%
-  summarise(
-    percentlooking=length(which(lookattarget_lib==1))/length(which(lookattarget_lib!=9)),
-    type = 1
-  )
-
-# combine
-foo <- rbind(goo, goo2)
-
-# calculate mean and SE
-foo2 <- group_by(foo, trial, type) %>%
-  summarise(
-    meanlooking=mean(percentlooking,na.rm = TRUE),
-    selooking=sd(percentlooking, na.rm = TRUE)/sqrt(length(percentlooking))
-  )
-
-# plot
-limits <- aes(ymax = meanlooking + selooking, ymin=meanlooking - selooking)
-dodge <- position_dodge(width=0.9)
-
-ggplot(foo2,aes(x=factor(trial),y=meanlooking,color=factor(type),fill=factor(type)))+
-  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  geom_bar(stat="identity",position=dodge)+
-  ggtitle(" 'Looking at target' criteria comparison")+
-  labs(x = "Trial", y = "Looking at target")+
-  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
-  theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
-  theme(plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(labels=percent,limits=c(0,.7),breaks=seq(0,.7,.05))+
-  scale_x_discrete(breaks=c("0","1"),labels=c("ISI", "Image"))+
-  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
-  guides(color=FALSE)+
-  scale_fill_discrete(name="Method",breaks=c("0","1"),labels=c("Conservative", "Liberal"))
-
-#Liberal method increases our "looking at target" percentage 
-```
-
-Compare pupil size for condition (all samples)
-```{r}
-# get test phase data
-poo <- subset(orig.sample.a, phase==1)
-
-# calculate mean pupil for each trial
-foo <- group_by(poo, subID, TRIAL_INDEX_RECODE, trial, condition) %>%
-  summarise(
-    pupilsize=mean(PUPIL_CORRECTED, na.rm = TRUE)
-  )
-
-# collapse across subjects
-foo2 <- group_by(foo, trial, condition) %>%
-  summarise(
-    meanPupil=mean(pupilsize,na.rm = TRUE),
-    sePupil=sd(pupilsize, na.rm = TRUE)/sqrt(length(pupilsize))
-  )
-
-# plot
-limits <- aes(ymax = meanPupil + sePupil, ymin=meanPupil - sePupil)
-dodge <- position_dodge(width=0.9)
-
-ggplot(foo2,aes(x=factor(trial),y=meanPupil,color=factor(condition),fill=factor(condition)))+
-  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  geom_bar(stat="identity",position=dodge)+
-  ggtitle("All samples")+
-  labs(x = "Trial", y = "Pupil change from baseline")+
-  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
-  theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
-  theme(plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(labels=percent,limits=c(-0.3,.1),breaks=seq(-0.3,.1,.05))+
-  scale_x_discrete(breaks=c("0","1"),labels=c("ISI", "Image"))+
-  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
-  guides(color=FALSE)+
-  theme(legend.position="bottom")+
-  scale_fill_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
-  scale_color_brewer(palette="Accent")
-
-#Recall that our baseline was measured: during training, when they're looking at a picture on the left/right side 
-#Results suggest that during test phase, their pupil size when they're viewing an image didn't change much than when it was during training phase. The unpredictable condition seems to be exactly like baseline (makes sense since our baseline was unpredictable). The unpredictable condition might be a bit smaller than baseline. This aligns with our hypothesis that predictable = smaller PDR, and unpredictable/PE/surprise = bigger PDR
-#What stands out the most is the ISI pupil change is extremely negative, probably due to looking around. 
-```
-
-Compare pupil size for condition (looking at target, liberal)
-```{r}
-# calculate mean pupil for each trial
-foo <- group_by(poo, subID, TRIAL_INDEX_RECODE, trial, condition, lookattarget_lib) %>%
-  summarise(
-    pupilsize=mean(PUPIL_CORRECTED, na.rm = TRUE)
-  )
-
-# collapse across subjects
-foo2 <- group_by(foo, trial, condition,lookattarget_lib) %>%
-  summarise(
-    meanPupil=mean(pupilsize,na.rm = TRUE),
-    sePupil=sd(pupilsize, na.rm = TRUE)/sqrt(length(pupilsize))
-  )
-
-#only looking at target
-foo2 <- subset(foo2, lookattarget_lib==1)
-
-# plot
-limits <- aes(ymax = meanPupil + sePupil, ymin=meanPupil - sePupil)
-dodge <- position_dodge(width=0.9)
-
-ggplot(foo2,aes(x=factor(trial),y=meanPupil,color=factor(condition),fill=factor(condition)))+
-  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  geom_bar(stat="identity",position=dodge)+
-  ggtitle("Looking at target (Liberal)")+
-  labs(x = "Trial", y = "Pupil change from baseline")+
-  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
-  theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
-  theme(plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(labels=percent,limits=c(-0.3,.1),breaks=seq(-0.3,.1,.05))+
-  scale_x_discrete(breaks=c("0","1"),labels=c("ISI", "Image"))+
-  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
-  guides(color=FALSE)+
-  theme(legend.position="bottom")+
-  scale_fill_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
-  scale_color_brewer(palette="Accent")
-
-```
-
-Compare pupil size for condition (looking at target, conservative)
-```{r}
-# calculate mean pupil for each trial
-foo <- group_by(poo, subID, TRIAL_INDEX_RECODE, trial, condition, lookattarget) %>%
-  summarise(
-    pupilsize=mean(PUPIL_CORRECTED, na.rm = TRUE)
-  )
-
-# collapse across subjects
-foo2 <- group_by(foo, trial, condition,lookattarget) %>%
-  summarise(
-    meanPupil=mean(pupilsize,na.rm = TRUE),
-    sePupil=sd(pupilsize, na.rm = TRUE)/sqrt(length(pupilsize))
-  )
-
-#only looking at target
-foo2 <- subset(foo2, lookattarget==1)
-
-# plot
-limits <- aes(ymax = meanPupil + sePupil, ymin=meanPupil - sePupil)
-dodge <- position_dodge(width=0.9)
-
-ggplot(foo2,aes(x=factor(trial),y=meanPupil,color=factor(condition),fill=factor(condition)))+
-  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  geom_bar(stat="identity",position=dodge)+
-  ggtitle("Looking at target (Conservative)")+
-  labs(x = "Trial", y = "Pupil change from baseline")+
-  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
-  theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
-  theme(plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(labels=percent,limits=c(-0.3,.1),breaks=seq(-0.3,.1,.05))+
-  scale_x_discrete(breaks=c("0","1"),labels=c("ISI", "Image"))+
-  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
-  guides(color=FALSE)+
-  theme(legend.position="bottom")+
-  scale_fill_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
-  scale_color_brewer(palette="Accent")
-
-#unpredictable condition has smaller pupil response
-```
-
-AEM coding using liberal method 
-```{r}
-# get test phase data
-aemwindow <- subset(orig.sample.a, phase==1)
-
-# count number of consecutive looks
-aemwindow$targetcount <- sequence(rle(aemwindow$lookattarget_lib)$lengths)
-
-# calculate diff column so we know when a look starts and stops
-aemwindow$diff <- c(diff(aemwindow$targetcount),-aemwindow$targetcount[length(aemwindow$RECORDING_SESSION_LABEL)])
-
-# only care about eye movements initiated between 150ms - 1350ms bc of AEM
-aemwindow$keep <- 1
-rownum_lookstart <- which(aemwindow$targetcount==1) #where each look starts
-
-for (i in 1:length(rownum_lookstart)){
-  time <- aemwindow$TIMECODE_RECODE[rownum_lookstart[i]]  #time look starts
-  if (time < 150 | time > 1350) { #remove it
-    aemwindow$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-  }
-}
-
-# make sure look is longer than 100ms
-rownum_lookstart <- which(aemwindow$targetcount==1) #where each look starts
-
-for (i in 1:length(rownum_lookstart)){
-  if (i==length(rownum_lookstart)) { #it's the last look
-    lengthoflook <- aemwindow$diff[length(aemwindow$subID)] #the last row of the DF
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      aemwindow$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  } else {
-    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
-    lengthoflook <- aemwindow$diff[rownum_end] #length of look
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      aemwindow$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  }
-}
-
-# remove bad looks
-poo <- subset(aemwindow, keep == 1)
-
-# remove bad eye gazes
-poo <- subset(poo, lookattarget_lib !=9)
-
-# groups last sample of every AEM
-aemcodingall <- subset(poo, diff !=1)
-
-# separate it by correct, incorrect, together
-aemcoding_lib_correct <- subset(aemcodingall, lookattarget_lib==1)
-aemcoding_lib <- aemcodingall
-aemcoding_lib$AEM <- 0
-aemcoding_lib$AEM[aemcoding_lib$lookattarget_lib==1 ] <- 1 #only looking at target == correct AEM
-```
-
-AEM coding using conservative method 
+AEM coding
 ```{r}
 # get test phase data
 aemwindow <- subset(orig.sample.a, phase==1)
@@ -448,20 +198,437 @@ for (i in 1:length(rownum_lookstart)){
 poo <- subset(aemwindow, keep == 1)
 
 # remove bad eye gazes
-poo <- subset(poo, lookattarget !=9)
+aemcodingall <- subset(poo, lookattarget !=9)
 
 # groups last sample of every AEM
-aemcodingall <- subset(poo, diff !=1)
+aemcodingunique <- subset(aemcodingall, diff !=1)
 
 # separate it by correct, incorrect, together
-aemcoding_con_correct <- subset(aemcodingall, lookattarget==1)
-aemcoding_con <- aemcodingall
+aemcoding_con_correct <- subset(aemcodingunique, lookattarget==1)
+aemcoding_con <- aemcodingunique
 aemcoding_con$AEM <- 0
 aemcoding_con$AEM[aemcoding_con$lookattarget==1 ] <- 1 #only looking at target == correct AEM
 ```
 
-Compare number of AEMs for condition
-Conservative
+Number of trials we have for each condition 
+```{r}
+# get test phase data
+foo <- subset(orig.sample.a, phase==1)
+
+# calculate number of good trials
+foo2 <- group_by(foo, subID, condition) %>%
+  summarize(numtrials = length(unique(TRIAL_INDEX_RECODE))
+            )
+
+# calculate mean and SE
+foo3 <- group_by(foo2, condition) %>%
+  summarise(
+    meantrials=mean(numtrials,na.rm = TRUE),
+    setrials=sd(numtrials, na.rm = TRUE)/sqrt(length(numtrials))
+  )
+
+# plot
+limits <- aes(ymax = meantrials + setrials, ymin=meantrials - setrials)
+
+ggplot(foo3,aes(x=factor(condition),y=meantrials,fill=factor(condition),color=factor(condition)))+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+  geom_bar(stat="identity")+
+  labs(x = "Condition", y = "Number of good trials (max=40)")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  theme(legend.position="none")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_x_discrete(breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
+  scale_y_continuous(limits=c(0,40),breaks=seq(0,40,10))+
+  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
+  scale_fill_brewer(palette="Accent")+
+  scale_color_brewer(palette="Accent")+
+  theme(legend.position="none")
+```
+
+Looking at target  
+```{r}
+# calculate percent looking
+goo <- group_by(orig.sample.a, subID, TRIAL_INDEX_RECODE, trial) %>%
+  summarise(
+    percentlooking=length(which(lookattarget==1))/length(which(lookattarget!=9))
+  )
+
+# calculate mean and SE
+foo2 <- group_by(goo, trial) %>%
+  summarise(
+    meanlooking=mean(percentlooking,na.rm = TRUE),
+    selooking=sd(percentlooking, na.rm = TRUE)/sqrt(length(percentlooking))
+  )
+
+# plot
+limits <- aes(ymax = meanlooking + selooking, ymin=meanlooking - selooking)
+dodge <- position_dodge(width=0.9)
+
+ggplot(foo2,aes(x=factor(trial),y=meanlooking,color=factor(trial),fill=factor(trial)))+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+  geom_bar(stat="identity",position=dodge)+
+  labs(x = "Trial", y = "Looking at target")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(labels=percent,limits=c(0,.7),breaks=seq(0,.7,.05))+
+  scale_x_discrete(breaks=c("0","1"),labels=c("ISI", "Image"))+
+  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
+  theme(legend.position = "none")
+
+#the above graph is good for looking at data quality for pupil size but maybe not best way to do it for eye movements.
+```
+
+Looking at screen  
+```{r}
+# calculate percent looking
+goo <- group_by(orig.sample.a, subID, TRIAL_INDEX_RECODE, trial) %>%
+  summarise(
+    percentlooking=length(which(lookattarget!=9))/length(lookattarget)
+  )
+
+# calculate mean and SE
+foo2 <- group_by(goo, trial) %>%
+  summarise(
+    meanlooking=mean(percentlooking,na.rm = TRUE),
+    selooking=sd(percentlooking, na.rm = TRUE)/sqrt(length(percentlooking))
+  )
+
+# plot
+limits <- aes(ymax = meanlooking + selooking, ymin=meanlooking - selooking)
+dodge <- position_dodge(width=0.9)
+
+ggplot(foo2,aes(x=factor(trial),y=meanlooking,color=factor(trial),fill=factor(trial)))+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+  geom_bar(stat="identity",position=dodge)+
+  labs(x = "Trial", y = "Looking at screen")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(labels=percent,limits=c(0,1),breaks=seq(0,1,.1))+
+  scale_x_discrete(breaks=c("0","1"),labels=c("ISI", "Image"))+
+  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
+  theme(legend.position = "none")
+```
+
+Compare pupil size for condition (group average, all samples)
+```{r}
+# get test phase data
+poo <- subset(orig.sample.a, phase==1)
+
+# calculate mean pupil for each trial
+foo <- group_by(poo, subID, TRIAL_INDEX_RECODE, trial, condition) %>%
+  summarise(
+    pupilsizeA=mean(PUPIL_CORRECTED, na.rm = TRUE),
+    pupilsizeB=mean(PUPIL_CORRECTED2, na.rm = TRUE)
+  )
+
+# collapse across subjects
+foo2 <- group_by(foo, trial, condition) %>%
+  summarise(
+    meanPupilA=mean(pupilsizeA,na.rm = TRUE),
+    sePupilA=sd(pupilsizeA, na.rm = TRUE)/sqrt(length(pupilsizeA)),
+    meanPupilB=mean(pupilsizeB,na.rm = TRUE),
+    sePupilB=sd(pupilsizeB, na.rm = TRUE)/sqrt(length(pupilsizeB))    
+  )
+
+# plot
+limits <- aes(ymax = meanPupilA + sePupilA, ymin=meanPupilA - sePupilA)
+dodge <- position_dodge(width=0.9)
+
+ggplot(foo2,aes(x=factor(trial),y=meanPupilA,color=factor(condition),fill=factor(condition)))+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+  geom_bar(stat="identity",position=dodge)+
+  ggtitle("Baseline A (All samples)")+
+  labs(x = "Trial", y = "Pupil change from baseline")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(labels=percent,limits=c(-0.3,.1),breaks=seq(-0.3,.1,.05))+
+  scale_x_discrete(breaks=c("0","1"),labels=c("ISI", "Image"))+
+  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
+  guides(color=FALSE)+
+  theme(legend.position="bottom")+
+  scale_fill_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
+  scale_color_brewer(palette="Accent")
+
+#Recall that our baseline was measured: during training, when they're looking at a picture on the left/right side 
+#Results suggest that during test phase, their pupil size when they're viewing an image didn't change much than when it was during training phase. The unpredictable condition seems to be exactly like baseline (makes sense since our baseline was unpredictable). The unpredictable condition might be a bit smaller than baseline. This aligns with our hypothesis that predictable = smaller PDR, and unpredictable/PE/surprise = bigger PDR
+#What stands out the most is the ISI pupil change is extremely negative, probably due to looking around. 
+
+
+# plot
+limits <- aes(ymax = meanPupilB + sePupilB, ymin=meanPupilB - sePupilB)
+dodge <- position_dodge(width=0.9)
+
+ggplot(foo2,aes(x=factor(trial),y=meanPupilB,color=factor(condition),fill=factor(condition)))+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+  geom_bar(stat="identity",position=dodge)+
+  ggtitle("Baseline B (All samples)")+
+  labs(x = "Trial", y = "Pupil change from baseline")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(labels=percent,limits=c(-0.3,.1),breaks=seq(-0.3,.1,.05))+
+  scale_x_discrete(breaks=c("0","1"),labels=c("ISI", "Image"))+
+  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
+  guides(color=FALSE)+
+  theme(legend.position="bottom")+
+  scale_fill_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
+  scale_color_brewer(palette="Accent")
+```
+
+Compare pupil size for condition (group average, looking at target)
+```{r}
+# calculate mean pupil for each trial
+foo <- group_by(poo, subID, TRIAL_INDEX_RECODE, trial, condition, lookattarget) %>%
+  summarise(
+    pupilsizeA=mean(PUPIL_CORRECTED, na.rm = TRUE),
+    pupilsizeB=mean(PUPIL_CORRECTED2, na.rm = TRUE)
+  )
+
+# collapse across subjects
+foo2 <- group_by(foo, trial, condition,lookattarget) %>%
+  summarise(
+    meanPupilA=mean(pupilsizeA,na.rm = TRUE),
+    sePupilA=sd(pupilsizeA, na.rm = TRUE)/sqrt(length(pupilsizeA)),
+    meanPupilB=mean(pupilsizeB,na.rm = TRUE),
+    sePupilB=sd(pupilsizeB, na.rm = TRUE)/sqrt(length(pupilsizeB))    
+  )
+
+#only looking at target
+foo2 <- subset(foo2, lookattarget==1)
+
+# plot
+limits <- aes(ymax = meanPupilA + sePupilA, ymin=meanPupilA - sePupilA)
+dodge <- position_dodge(width=0.9)
+
+ggplot(foo2,aes(x=factor(trial),y=meanPupilA,color=factor(condition),fill=factor(condition)))+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+  geom_bar(stat="identity",position=dodge)+
+  ggtitle("Baseline A (Looking at target)")+
+  labs(x = "Trial", y = "Pupil change from baseline")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(labels=percent,limits=c(-0.3,.1),breaks=seq(-0.3,.1,.05))+
+  scale_x_discrete(breaks=c("0","1"),labels=c("ISI", "Image"))+
+  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
+  guides(color=FALSE)+
+  theme(legend.position="bottom")+
+  scale_fill_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
+  scale_color_brewer(palette="Accent")
+
+#unpredictable condition has smaller pupil response
+
+# plot
+limits <- aes(ymax = meanPupilB + sePupilB, ymin=meanPupilB - sePupilB)
+dodge <- position_dodge(width=0.9)
+
+ggplot(foo2,aes(x=factor(trial),y=meanPupilB,color=factor(condition),fill=factor(condition)))+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+  geom_bar(stat="identity",position=dodge)+
+  ggtitle("Baseline B (Looking at target)")+
+  labs(x = "Trial", y = "Pupil change from baseline")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(labels=percent,limits=c(-0.3,.1),breaks=seq(-0.3,.1,.05))+
+  scale_x_discrete(breaks=c("0","1"),labels=c("ISI", "Image"))+
+  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
+  guides(color=FALSE)+
+  theme(legend.position="bottom")+
+  scale_fill_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
+  scale_color_brewer(palette="Accent")
+```
+
+pupil timecourse (all samples)
+```{r}
+# get test phase data
+poo <- subset(orig.sample.a, phase==1)
+
+# calculate mean pupil for each trial
+foo <- group_by(poo, subID, TIMECODE_RECODE, condition) %>%
+  summarise(
+    pupilsizeA=mean(PUPIL_CORRECTED, na.rm = TRUE),
+    pupilsizeB=mean(PUPIL_CORRECTED2, na.rm = TRUE)
+  )
+
+# collapse across subjects
+foo2 <- group_by(foo, TIMECODE_RECODE, condition) %>%
+  summarise(
+    meanPupilA=mean(pupilsizeA,na.rm = TRUE),
+    sePupilA=sd(pupilsizeA, na.rm = TRUE)/sqrt(length(pupilsizeA)),
+    meanPupilB=mean(pupilsizeB,na.rm = TRUE),
+    sePupilB=sd(pupilsizeB, na.rm = TRUE)/sqrt(length(pupilsizeB))    
+  )
+
+ggplot(foo2,aes(x=TIMECODE_RECODE,y=meanPupilA,color=factor(condition),fill=factor(condition)))+
+  geom_line(size=1)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  ggtitle("Baseline A")+
+  labs(x = "Time", y = "Pupil change from baseline (%)")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0.5))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  scale_y_continuous(labels=percent,limits=c(-.2,.1),breaks=seq(-.2,.1,.05))+  
+  theme(legend.position = "bottom")+
+  scale_color_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
+  scale_fill_brewer(palette="Accent")+
+  geom_vline(xintercept = 1200)
+
+ggplot(foo2,aes(x=TIMECODE_RECODE,y=meanPupilB,color=factor(condition),fill=factor(condition)))+
+  geom_line(size=1)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  ggtitle("Baseline B")+
+  labs(x = "Time", y = "Pupil change from baseline (%)")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0.5))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  scale_y_continuous(labels=percent,limits=c(-.2,.1),breaks=seq(-.2,.1,.05))+  
+  theme(legend.position = "bottom")+
+  scale_color_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
+  scale_fill_brewer(palette="Accent")+
+  geom_vline(xintercept = 1200)
+
+#BASELINE B EXAGGERATES DIFFERENCES BW UNPREDICTABLE AND PREDICTABLE
+```
+
+pupil timecourse (looking at target )
+```{r}
+# get test phase data & looking at target
+poo <- subset(orig.sample.a, phase==1 & lookattarget==1)
+
+# calculate mean pupil for each trial
+foo <- group_by(poo, subID, TIMECODE_RECODE, condition) %>%
+  summarise(
+    pupilsizeA=mean(PUPIL_CORRECTED, na.rm = TRUE),
+    pupilsizeB=mean(PUPIL_CORRECTED2, na.rm = TRUE)
+  )
+
+# collapse across subjects
+foo2 <- group_by(foo, TIMECODE_RECODE, condition) %>%
+  summarise(
+    meanPupilA=mean(pupilsizeA,na.rm = TRUE),
+    sePupilA=sd(pupilsizeA, na.rm = TRUE)/sqrt(length(pupilsizeA)),
+    meanPupilB=mean(pupilsizeB,na.rm = TRUE),
+    sePupilB=sd(pupilsizeB, na.rm = TRUE)/sqrt(length(pupilsizeB))    
+  )
+
+ggplot(foo2,aes(x=TIMECODE_RECODE,y=meanPupilA,color=factor(condition),fill=factor(condition)))+
+  geom_line(size=1)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  ggtitle("Baseline A")+
+  labs(x = "Time", y = "Pupil change from baseline (%)")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0.5))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  scale_y_continuous(labels=percent,limits=c(-.2,.1),breaks=seq(-.2,.1,.05))+  
+  theme(legend.position = "bottom")+
+  scale_color_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
+  scale_fill_brewer(palette="Accent")+
+  geom_vline(xintercept = 1200)
+
+ggplot(foo2,aes(x=TIMECODE_RECODE,y=meanPupilB,color=factor(condition),fill=factor(condition)))+
+  geom_line(size=1)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  ggtitle("Baseline B")+
+  labs(x = "Time", y = "Pupil change from baseline (%)")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0.5))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  scale_y_continuous(labels=percent,limits=c(-.2,.1),breaks=seq(-.2,.1,.05))+  
+  theme(legend.position = "bottom")+
+  scale_color_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
+  scale_fill_brewer(palette="Accent")+
+  geom_vline(xintercept = 1200)
+
+#BASELINE B EXAGGERATES DIFFERENCES BW UNPREDICTABLE AND PREDICTABLE
+```
+
+How many test trials have AEMs? 
+```{r}
+# aem window (150 - 1350)
+foo <- subset(aemcoding_con, TIMECODE_RECODE > 149 & TIMECODE_RECODE < 1351)
+
+# number of aem type for each subject
+foo2 <- group_by(foo, subID, AEM) %>%
+  summarise(
+    numoftrials =length(unique(TRIAL_INDEX_RECODE,na.rm = TRUE))
+  )
+
+# only correct AEM
+foo2 <- subset(foo2, AEM==1)
+
+# total number of trials completed by subject
+totaltrials <- group_by(orig.sample.a, subID, phase) %>%
+  summarise(
+    totaltrials =length(unique(TRIAL_INDEX_RECODE,na.rm = TRUE))
+  )
+
+totaltrials <- subset(totaltrials, phase==1)
+
+# combine
+foo2 <- merge(foo2, totaltrials)
+foo2$phase <- NULL
+
+# add info to foo2
+subs <- unique(foo2$subID)
+
+for (i in 1:length(subs)) { 
+  t <- unique(foo2$totaltrials[foo2$subID==subs[i]])
+  b <- foo2$totaltrials[foo2$subID==subs[i]] - foo2$numoftrials[foo2$subID==subs[i]]
+  z <- c(subs[i],0,b,t)
+  foo2 <- rbind(foo2, z)
+}
+
+# calculate percent
+foo2$percent <- foo2$numoftrials/foo2$totaltrials
+
+ggplot(foo2,aes(x=factor(subID),y=percent,color=factor(AEM),fill=factor(AEM)))+
+  geom_bar(stat="identity")+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+  labs(x = "Subject", y = "% of trials")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
+  guides(color=FALSE)+
+  scale_fill_brewer(palette="Set1",name="Trial breakdown",breaks=c("0","1"),labels=c("no correct AEM", "correct AEM"))+
+  scale_color_brewer(palette="Set1")+
+  theme(legend.position = "bottom")+
+  scale_y_continuous(labels = scales::percent,limits=c(0,1),breaks=seq(0,1,.2))
+
+avgAEM <- mean(foo2$percent[foo2$AEM2==3])
+avgIncorrectAEM <- mean(foo2$percent[foo2$AEM2==2])
+avgNoAEM <- mean(foo2$percent[foo2$AEM2==1])
+```
+
+Compare AEM types for condition
+% AEM = number of AEMs/ number of looks in that time window
 ```{r}
 # number of AEM in every trial
 foo <- group_by(aemcoding_con, subID, TRIAL_INDEX_RECODE, condition, AEM) %>%
@@ -475,7 +642,7 @@ foo2 <- group_by(foo, subID, condition,AEM) %>%
     totalAEM=sum(aemnum,na.rm = TRUE)
   )
 
-# calculate percent AEM (number of AEM type/ total number of AEM)
+# calculate percent AEM (number of AEM type/ total number of looks)
 subs <- unique(foo2$subID)
 foo2$percentAEM <- 0
 
@@ -498,12 +665,11 @@ dodge <- position_dodge(width=0.9)
 ggplot(foo3,aes(x=factor(condition),y=meanAEM,color=factor(AEM),fill=factor(AEM)))+
   theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
   geom_bar(stat="identity",position=dodge)+
-  ggtitle("Conservative")+
-  labs(x = "Condition", y = "% AEM (/total number of AEMs)")+
+  labs(x = "Condition", y = "Eye movements during AEM window")+
   theme(plot.title = element_text(face="bold", size=20, hjust=0))+
   theme(axis.title = element_text(face="bold", size=20))+ 
   theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
   theme(plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(labels=percent,limits=c(0,1),breaks=seq(0,1,.2))+
   scale_x_discrete(breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
@@ -511,676 +677,412 @@ ggplot(foo3,aes(x=factor(condition),y=meanAEM,color=factor(AEM),fill=factor(AEM)
   guides(color=FALSE)+
   theme(legend.position="bottom")+
   scale_color_brewer(palette="Set1")+
-  scale_fill_brewer(palette="Set1",name="AEM type",breaks=c("0","1"),labels=c("Incorrect", "Correct"))
+  scale_fill_brewer(palette="Set1",name="Eye movement",breaks=c("0","1"),labels=c("Other", "Correct AEM"))
 
 #There doesn't seem to be making difference between conditions. Looks like Ss make more incorrect AEMs but is that actually incorrect AEM or just sticky fixation?
 ```
 
-Compare number of AEMs for condition
-Liberal
+check how long babies look at target area for correct AEM (i.e. how long do they wait for picture to show up)
+break it up for ISI and image
+and condition
 ```{r}
-# number of AEM in every trial
-foo <- group_by(aemcoding_lib, subID, TRIAL_INDEX_RECODE, condition, AEM) %>%
+# calculate how long each aem look for correct AEMS
+aemcoding_con$lengthoflook <- abs(aemcoding_con$diff)*4
+
+#correct AEM
+boo <- subset(aemcoding_con, lookattarget==1)
+
+# get correct aem
+foo <- group_by(boo, subID, condition, trial) %>%
   summarise(
-    aemnum=length(diff)
+    lookdur=mean(lengthoflook,na.rm = TRUE)
   )
 
-# total number of AEM for each subject
-foo2 <- group_by(foo, subID, condition,AEM) %>%
+# get mean and SE
+foo2 <- group_by(foo, condition, trial) %>%
   summarise(
-    totalAEM=sum(aemnum,na.rm = TRUE)
-  )
-
-# calculate percent AEM (number of AEM type/ total number of AEM)
-subs <- unique(foo2$subID)
-foo2$percentAEM <- 0
-for (j in 1:length(subs)) {
-  foo2$percentAEM[foo2$subID==subs[j] & foo2$condition==0] <- foo2$totalAEM[foo2$subID==subs[j] & foo2$condition==0]/ sum(foo2$totalAEM[foo2$subID==subs[j] & foo2$condition==0])
-  foo2$percentAEM[foo2$subID==subs[j] & foo2$condition==1] <- foo2$totalAEM[foo2$subID==subs[j] & foo2$condition==1]/ sum(foo2$totalAEM[foo2$subID==subs[j] & foo2$condition==1])
-}
-
-# get se and mean
-foo3 <- group_by(foo2, condition,AEM) %>%
-  summarise(
-    meanAEM=mean(percentAEM,na.rm = TRUE),
-    seAEM=sd(percentAEM, na.rm = TRUE)/sqrt(length(percentAEM))
+    meanLook=mean(lookdur,na.rm = TRUE),
+    seLook=sd(lookdur, na.rm = TRUE)/sqrt(length(lookdur))
   )
 
 # plot
-limits <- aes(ymax = meanAEM + seAEM, ymin=meanAEM - seAEM)
+limits <- aes(ymax = meanLook + seLook, ymin=meanLook - seLook)
 dodge <- position_dodge(width=0.9)
 
-ggplot(foo3,aes(x=factor(condition),y=meanAEM,color=factor(AEM),fill=factor(AEM)))+
+ggplot(foo2,aes(x=factor(trial),y=meanLook,color=factor(condition),fill=factor(condition)))+
   theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
   geom_bar(stat="identity",position=dodge)+
-  ggtitle("Liberal")+
-  labs(x = "Condition", y = "% AEM (/total number of AEMs)")+
+  ggtitle("Correct AEM")+
+  labs(x = "Image", y = "Length of look (ms)")+
   theme(plot.title = element_text(face="bold", size=20, hjust=0))+
   theme(axis.title = element_text(face="bold", size=20))+ 
   theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
   theme(plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(labels=percent,limits=c(0,1),breaks=seq(0,1,.2))+
-  scale_x_discrete(breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
+  scale_y_continuous(limits=c(0,1500),breaks=seq(0,1500,250))+
+  scale_x_discrete(breaks=c("0","1"),labels=c("ISI", "Image"))+
   geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
   guides(color=FALSE)+
   theme(legend.position="bottom")+
-  scale_color_brewer(palette="Set1")+
-  scale_fill_brewer(palette="Set1",name="AEM type",breaks=c("0","1"),labels=c("Incorrect", "Correct"))
-
-#There seems to be a much larger gap between correct and incorrect AEM for unpredictable condition, but not predictable.
-```
-
-Speed of REM different between conditions?
-Liberal 
-```{r}
-#1. CALCULATE BASELINE (using training phase) RT for REM 
-
-# get training phase data
-speedbaseline <- subset(orig.sample.a, phase==0)
-
-# count number of consecutive looks
-speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget_lib)$lengths)
-
-# calculate diff column so we know when a look starts and stops
-speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
-
-# make sure look is over 100ms
-speedbaseline$keep <- 1
-rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
-for (i in 1:length(rownum_lookstart)){
-  if (i==length(rownum_lookstart)) { #it's the last look
-    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  } else {
-    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
-    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  }
-}
-
-# remove short looks
-speedbaseline <- subset(speedbaseline, keep == 1)
-
-# make sure it's look to target 
-speedbaseline <- subset(speedbaseline, lookattarget_lib == 1)
-
-# only care about first look
-firstlook <- subset(speedbaseline, targetcount==1)
-
-# classify look as REM (after 1350ms) or not 
-firstlook$aemrem <- 0
-firstlook$aemrem[firstlook$TIMECODE_RECODE > 1350] <- 1
-
-# only care about REM
-firstlook <- subset(firstlook, aemrem == 1)
-
-# remove duplicate (i.e. make more than 1 REM)
-firstlook <- firstlook %>% 
-        group_by(subID,condition,TRIAL_INDEX_RECODE) %>%
-        top_n(1, -TIMECODE_RECODE) #- for min value instead of stop value
-
-# average baseline RT for REM
-aemrembaseline <- group_by(firstlook, subID, aemrem) %>%
-  summarise(
-    baselinert = max(TIMECODE_RECODE, na.rm = TRUE)
-  )
-
-#TEST PHASE
-speedbaseline <- subset(orig.sample.a, phase==1)
-
-# count number of consecutive looks
-speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget_lib)$lengths)
-
-# calculate diff column so we know when a look starts and stops
-speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
-
-# make sure look is over 100ms
-speedbaseline$keep <- 1
-rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
-for (i in 1:length(rownum_lookstart)){
-  if (i==length(rownum_lookstart)) { #it's the last look
-    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  } else {
-    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
-    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  }
-}
-
-# remove short looks
-speedbaseline <- subset(speedbaseline, keep == 1)
-
-# make sure it's look to target 
-speedbaseline <- subset(speedbaseline, lookattarget_lib == 1)
-
-# only care about first look
-firstlook <- subset(speedbaseline, targetcount==1)
-
-# classify look as REM (after 1350ms) or not 
-firstlook$aemrem <- 0
-firstlook$aemrem[firstlook$TIMECODE_RECODE > 1350] <- 1
-
-# only care about REM
-firstlook <- subset(firstlook, aemrem == 1)
-
-# remove duplicate (i.e. make more than 1 REM)
-firstlook <- firstlook %>% 
-        group_by(subID,condition,TRIAL_INDEX_RECODE) %>%
-        top_n(1, -TIMECODE_RECODE) #- for min value instead of stop value
-
-# average baseline RT for REM
-rem_testphase <- group_by(firstlook, subID, aemrem, condition) %>%
-  summarise(
-    testrt = max(TIMECODE_RECODE, na.rm = TRUE)
-  )
-
-#combine DF
-rem_testphase <- merge(rem_testphase, aemrembaseline)
-
-rem_testphase$timediff <- rem_testphase$baselinert - rem_testphase$testrt 
-#positive number = test phase is slower, negative number = test phase is faster
-
-foo <- group_by(rem_testphase, condition) %>%
-  summarise(
-    meanRT = mean(timediff, na.rm = TRUE),
-    seRT=sd(timediff, na.rm = TRUE)/sqrt(length(timediff))
-  )
-
-#plot
-dodge <- position_dodge(width=0.9)
-limits <- aes(ymax = meanRT + seRT, ymin=meanRT - seRT)
-
-ggplot(foo,aes(x=factor(condition),y=meanRT,color=factor(condition),fill=factor(condition)))+
-  geom_bar(stat="identity",position=dodge)+
-  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  ggtitle("Liberal")+
-  labs(x = "Condition", y = "REM: Test RT - Training RT (ms)")+
-  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
-  theme(plot.title = element_text(hjust = 0.5))+
-  theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=16),axis.text.y  = element_text(size=16))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
-  scale_y_continuous(limits=c(-20,200),breaks=seq(-20,200,20))+
-  scale_x_discrete(breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
-  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
-  guides(color=FALSE, fill=FALSE)+
-  geom_hline(yintercept = 0, color="black",size=1)+
   scale_color_brewer(palette="Accent")+
-  scale_fill_brewer(palette="Accent")
-
+  scale_fill_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))
 ```
 
-Speed of REM different between conditions?
-Conservative 
+check how long babies look at target area for incorrect AEMs (i.e. how long do they wait for picture to show up)
+break it up for ISI and image
+and condition
 ```{r}
-#1. CALCULATE BASELINE (using training phase) RT for REM 
+# calculate how long each aem look for correct AEMS
+aemcoding_con$lengthoflook <- abs(aemcoding_con$diff)*4
 
-# get training phase data
-speedbaseline <- subset(orig.sample.a, phase==0)
+#correct AEM
+boo <- subset(aemcoding_con, lookattarget!=1)
 
-# count number of consecutive looks
-speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget)$lengths)
-
-# calculate diff column so we know when a look starts and stops
-speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
-
-# make sure look is over 100ms
-speedbaseline$keep <- 1
-rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
-for (i in 1:length(rownum_lookstart)){
-  if (i==length(rownum_lookstart)) { #it's the last look
-    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  } else {
-    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
-    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  }
-}
-
-# remove short looks
-speedbaseline <- subset(speedbaseline, keep == 1)
-
-# make sure it's look to target 
-speedbaseline <- subset(speedbaseline, lookattarget == 1)
-
-# only care about first look
-firstlook <- subset(speedbaseline, targetcount==1)
-
-# classify look as REM (after 1350ms) or not 
-firstlook$aemrem <- 0
-firstlook$aemrem[firstlook$TIMECODE_RECODE > 1350] <- 1
-
-# only care about REM
-firstlook <- subset(firstlook, aemrem == 1)
-
-# remove duplicate (i.e. make more than 1 REM)
-firstlook <- firstlook %>% 
-        group_by(subID,condition,TRIAL_INDEX_RECODE) %>%
-        top_n(1, -TIMECODE_RECODE) #- for min value instead of stop value
-
-# average baseline RT for REM
-aemrembaseline <- group_by(firstlook, subID, aemrem) %>%
+# get correct aem
+foo <- group_by(boo, subID, condition, trial) %>%
   summarise(
-    baselinert = max(TIMECODE_RECODE, na.rm = TRUE)
+    lookdur=mean(lengthoflook,na.rm = TRUE)
   )
 
-#TEST PHASE
-speedbaseline <- subset(orig.sample.a, phase==1)
-
-# count number of consecutive looks
-speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget)$lengths)
-
-# calculate diff column so we know when a look starts and stops
-speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
-
-# make sure look is over 100ms
-speedbaseline$keep <- 1
-rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
-for (i in 1:length(rownum_lookstart)){
-  if (i==length(rownum_lookstart)) { #it's the last look
-    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  } else {
-    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
-    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  }
-}
-
-# remove short looks
-speedbaseline <- subset(speedbaseline, keep == 1)
-
-# make sure it's look to target 
-speedbaseline <- subset(speedbaseline, lookattarget == 1)
-
-# only care about first look
-firstlook <- subset(speedbaseline, targetcount==1)
-
-# classify look as REM (after 1350ms) or not 
-firstlook$aemrem <- 0
-firstlook$aemrem[firstlook$TIMECODE_RECODE > 1350] <- 1
-
-# only care about REM
-firstlook <- subset(firstlook, aemrem == 1)
-
-# remove duplicate (i.e. make more than 1 REM)
-firstlook <- firstlook %>% 
-        group_by(subID,condition,TRIAL_INDEX_RECODE) %>%
-        top_n(1, -TIMECODE_RECODE) #- for min value instead of stop value
-
-# average baseline RT for REM
-rem_testphase <- group_by(firstlook, subID, aemrem, condition) %>%
+# get mean and SE
+foo2 <- group_by(foo, condition, trial) %>%
   summarise(
-    testrt = max(TIMECODE_RECODE, na.rm = TRUE)
-  )
-
-#combine DF
-rem_testphase <- merge(rem_testphase, aemrembaseline)
-
-rem_testphase$timediff <- rem_testphase$baselinert - rem_testphase$testrt 
-#positive number = test phase is slower, negative number = test phase is faster
-
-foo <- group_by(rem_testphase, condition) %>%
-  summarise(
-    meanRT = mean(timediff, na.rm = TRUE),
-    seRT=sd(timediff, na.rm = TRUE)/sqrt(length(timediff))
-  )
-
-#plot
-dodge <- position_dodge(width=0.9)
-limits <- aes(ymax = meanRT + seRT, ymin=meanRT - seRT)
-
-ggplot(foo,aes(x=factor(condition),y=meanRT,color=factor(condition),fill=factor(condition)))+
-  geom_bar(stat="identity",position=dodge)+
-  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  labs(x = "Condition", y = "REM: Test RT - Training RT (ms)")+
-  ggtitle("Conservative")+
-  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
-  theme(plot.title = element_text(hjust = 0.5))+
-  theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=16),axis.text.y  = element_text(size=16))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
-  scale_y_continuous(limits=c(-20,200),breaks=seq(-20,200,20))+
-  scale_x_discrete(breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
-  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
-  guides(color=FALSE, fill=FALSE)+
-  geom_hline(yintercept = 0, color="black",size=1)+
-  scale_color_brewer(palette="Accent")+
-  scale_fill_brewer(palette="Accent")
-
-```
-
-REM trial by trial
-Liberal
-```{r}
-# get test phase data
-speedbaseline <- subset(orig.sample.a, phase==1)
-
-# count number of consecutive looks
-speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget_lib)$lengths)
-
-# calculate diff column so we know when a look starts and stops
-speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
-
-# make sure look is over 100ms
-speedbaseline$keep <- 1
-rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
-for (i in 1:length(rownum_lookstart)){
-  if (i==length(rownum_lookstart)) { #it's the last look
-    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  } else {
-    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
-    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  }
-}
-
-# remove short looks
-speedbaseline <- subset(speedbaseline, keep == 1)
-
-# make sure it's look to target 
-speedbaseline <- subset(speedbaseline, lookattarget_lib == 1)
-
-# only care about first look
-firstlook <- subset(speedbaseline, targetcount==1)
-
-# classify look as REM (after 1350ms) or not 
-firstlook$aemrem <- 0
-firstlook$aemrem[firstlook$TIMECODE_RECODE > 1350] <- 1
-
-# only care about REM
-firstlook <- subset(firstlook, aemrem == 1)
-
-# remove duplicate (i.e. make more than 1 REM)
-firstlook <- firstlook %>% 
-        group_by(subID,condition,TRIAL_INDEX_RECODE) %>%
-        top_n(1, -TIMECODE_RECODE) #- for min value instead of stop value
-
-#create DF
-remtrialbytrial <- group_by(firstlook, subID, condition, TRIAL_INDEX_RECODE) %>%
-  summarise(
-    rt = mean(TIMECODE_RECODE, na.rm = TRUE)
-  )
-
-remtrialbytrial$rt <- remtrialbytrial$rt - 1200 #subtract 1200ms because duration of ISI
-
-remtrialbytrial$timesseen <- 0
-for (j in 1:length(subs)) {
-  x <- length(remtrialbytrial$TRIAL_INDEX_RECODE[remtrialbytrial$subID==subs[j] & remtrialbytrial$condition==0])
-  xx <- length(remtrialbytrial$TRIAL_INDEX_RECODE[remtrialbytrial$subID==subs[j] & remtrialbytrial$condition==1])
-  remtrialbytrial$timesseen[remtrialbytrial$subID==subs[j] & remtrialbytrial$condition==0] <- 1:x
-  remtrialbytrial$timesseen[remtrialbytrial$subID==subs[j] & remtrialbytrial$condition==1] <- 1:xx
-}
-
-foo <- group_by(remtrialbytrial, condition, timesseen) %>%
-  summarise(
-    meanRT = mean(rt, na.rm = TRUE),
-    seRT=sd(rt, na.rm = TRUE)/sqrt(length(rt))
-  )
-
-ggplot(foo,aes(x=timesseen,y=meanRT,color=factor(condition),fill=factor(condition)))+
-  geom_line(size=1)+geom_point(size=3)+
-  ggtitle("Changes in REM RT (Liberal)")+
-  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  labs(x = "REM number", y = "Time (ms)")+
-  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
-  theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
-  scale_y_continuous(limits=c(0,1000),breaks=seq(0,1000,100))+
-  scale_x_continuous(limits=c(1,30),breaks=seq(1,30,2))+
-  scale_color_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
-  scale_fill_brewer(palette="Accent")+
-  theme(legend.position="bottom")+
-  theme(plot.title = element_text(hjust = 0.5))+
-  guides(fill=FALSE)
-```
-
-REM trial by trial
-Conservative
-```{r}
-# get test phase data
-speedbaseline <- subset(orig.sample.a, phase==1)
-
-# count number of consecutive looks
-speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget)$lengths)
-
-# calculate diff column so we know when a look starts and stops
-speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
-
-# make sure look is over 100ms
-speedbaseline$keep <- 1
-rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
-for (i in 1:length(rownum_lookstart)){
-  if (i==length(rownum_lookstart)) { #it's the last look
-    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  } else {
-    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
-    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  }
-}
-
-# remove short looks
-speedbaseline <- subset(speedbaseline, keep == 1)
-
-# make sure it's look to target 
-speedbaseline <- subset(speedbaseline, lookattarget == 1)
-
-# only care about first look
-firstlook <- subset(speedbaseline, targetcount==1)
-
-# classify look as REM (after 1350ms) or not 
-firstlook$aemrem <- 0
-firstlook$aemrem[firstlook$TIMECODE_RECODE > 1350] <- 1
-
-# only care about REM
-firstlook <- subset(firstlook, aemrem == 1)
-
-# remove duplicate (i.e. make more than 1 REM)
-firstlook <- firstlook %>% 
-        group_by(subID,condition,TRIAL_INDEX_RECODE) %>%
-        top_n(1, -TIMECODE_RECODE) #- for min value instead of stop value
-
-#create DF
-remtrialbytrial <- group_by(firstlook, subID, condition, TRIAL_INDEX_RECODE) %>%
-  summarise(
-    rt = mean(TIMECODE_RECODE, na.rm = TRUE)
-  )
-
-remtrialbytrial$rt <- remtrialbytrial$rt - 1200 #subtract 1200ms because duration of ISI
-
-remtrialbytrial$timesseen <- 0
-for (j in 1:length(subs)) {
-  x <- length(remtrialbytrial$TRIAL_INDEX_RECODE[remtrialbytrial$subID==subs[j] & remtrialbytrial$condition==0])
-  xx <- length(remtrialbytrial$TRIAL_INDEX_RECODE[remtrialbytrial$subID==subs[j] & remtrialbytrial$condition==1])
-  remtrialbytrial$timesseen[remtrialbytrial$subID==subs[j] & remtrialbytrial$condition==0] <- 1:x
-  remtrialbytrial$timesseen[remtrialbytrial$subID==subs[j] & remtrialbytrial$condition==1] <- 1:xx
-}
-
-foo <- group_by(remtrialbytrial, condition, timesseen) %>%
-  summarise(
-    meanRT = mean(rt, na.rm = TRUE),
-    seRT=sd(rt, na.rm = TRUE)/sqrt(length(rt))
-  )
-
-ggplot(foo,aes(x=timesseen,y=meanRT,color=factor(condition),fill=factor(condition)))+
-  geom_line(size=1)+geom_point(size=3)+
-  ggtitle("Changes in REM RT (Conservative)")+
-  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  labs(x = "REM number", y = "Time (ms)")+
-  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
-  theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
-  scale_y_continuous(limits=c(0,1000),breaks=seq(0,1000,100))+
-  scale_x_continuous(limits=c(1,30),breaks=seq(1,30,2))+
-  scale_color_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
-  scale_fill_brewer(palette="Accent")+
-  theme(legend.position="bottom")+
-  theme(plot.title = element_text(hjust = 0.5))+
-  guides(fill=FALSE)
-```
-
-Time to disengagement (group average)
-Conservative
-```{r}
-# get test phase data
-speedbaseline <- subset(orig.sample.a, phase==1)
-
-# count number of consecutive looks
-speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget)$lengths)
-
-# calculate diff column so we know when a look starts and stops
-speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
-
-# make sure look is over 100ms
-speedbaseline$keep <- 1
-rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
-for (i in 1:length(rownum_lookstart)){
-  if (i==length(rownum_lookstart)) { #it's the last look
-    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  } else {
-    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
-    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  }
-}
-
-# remove short looks
-speedbaseline <- subset(speedbaseline, keep == 1)
-
-# make sure it's look to target 
-speedbaseline <- subset(speedbaseline, lookattarget == 1)
-
-# create DF to keep track of when each look starts and end
-yoo <- data.frame(subID=numeric(),trialstart=numeric(),start=numeric(),trialend=numeric(), end=numeric(),condition=numeric())
-rownum_lookend <- which(speedbaseline$diff!=1) #where each look ends
-
-for (i in 1:length(rownum_lookend)){
-  if (i==1) { #it's the first look
-    info <- c(speedbaseline$subID[rownum_lookend[i]],speedbaseline$TRIAL_INDEX_RECODE[1],speedbaseline$TIMECODE_RECODE[1],speedbaseline$TRIAL_INDEX_RECODE[rownum_lookend[i]],speedbaseline$TIMECODE_RECODE[rownum_lookend[i]],speedbaseline$condition[rownum_lookend[i]])
-    yoo <- rbind.data.frame(yoo,info)
-  } else {
-    info <- c(speedbaseline$subID[rownum_lookend[i]],speedbaseline$TRIAL_INDEX_RECODE[rownum_lookend[i-1]+1],speedbaseline$TIMECODE_RECODE[rownum_lookend[i-1]+1],speedbaseline$TRIAL_INDEX_RECODE[rownum_lookend[i]],speedbaseline$TIMECODE_RECODE[rownum_lookend[i]],speedbaseline$condition[rownum_lookend[i]])
-    yoo <- rbind.data.frame(yoo,info)
-  }
-}
-
-names(yoo) <- c("subID", "trialstart","start","trialend","end","condition")
-
-# code if each look actually includes picture
-yoo$picture <- 0
-yoo$picture[yoo$start > 1199] <- 1
-yoo$picture[yoo$end > 1199] <- 1
-
-# only want looking at picture
-yoo <- subset(yoo, picture==1)
-
-# code if each look is from same trial
-yoo$sametrial <- yoo$trialend - yoo$trialstart
-
-# keep look from the same trial
-yoo2 <- subset(yoo, sametrial==0)
-
-# calculate length of look
-yoo2$lengthlook <- yoo2$end - yoo2$start
-
-# aem
-yoo2$aem <- 0
-yoo2$aem[yoo2$start < 1200] <- 1
-
-# remove duplicate (i.e. make more than 1 REM)
-yoo3 <- yoo2 %>% 
-        group_by(subID,trialstart) %>%
-        top_n(1, -start) #- for keeping min value instead of max value
-
-# length of actually looking at picture
-yoo3$lookatpicture <- yoo3$end - 1200
-
-# only keep the ones where they look at picture longer than 150ms
-yoo4 <- subset(yoo3, lookatpicture > 150)
-
-# use the smaller value of lengthlook and lookatpicture (use parallel min function)
-yoo4 <- transform(yoo4, lookatpictureFINAL = pmin(lengthlook, lookatpicture))
-
-#create DF
-yoo5 <- group_by(yoo4, subID, condition) %>%
-  summarise(
-    lookpicture = mean(lookatpictureFINAL, na.rm = TRUE)
-  )
-
-yoo6 <- group_by(yoo5, condition) %>%
-  summarise(
-    meanLook = mean(lookpicture, na.rm = TRUE),
-    seLook=sd(lookpicture, na.rm = TRUE)/sqrt(length(lookpicture))
+    meanLook=mean(lookdur,na.rm = TRUE),
+    seLook=sd(lookdur, na.rm = TRUE)/sqrt(length(lookdur))
   )
 
 # plot
 limits <- aes(ymax = meanLook + seLook, ymin=meanLook - seLook)
+dodge <- position_dodge(width=0.9)
 
-ggplot(yoo6,aes(x=factor(condition),y=meanLook,fill=factor(condition),color=factor(condition)))+
+ggplot(foo2,aes(x=factor(trial),y=meanLook,color=factor(condition),fill=factor(condition)))+
   theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  geom_bar(stat="identity")+
-  ggtitle("Conservative")+
-  labs(x = "Condition", y = "Duration of initial look at picture (ms)")+
+  geom_bar(stat="identity",position=dodge)+
+  ggtitle("Incorrect AEM")+
+  labs(x = "Image", y = "Length of look (ms)")+
   theme(plot.title = element_text(face="bold", size=20, hjust=0))+
   theme(axis.title = element_text(face="bold", size=20))+ 
   theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
-  theme(legend.position="none")+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
   theme(plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(limits=c(0,1500),breaks=seq(0,1500,250))+
+  scale_x_discrete(breaks=c("0","1"),labels=c("ISI", "Image"))+
+  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
+  guides(color=FALSE)+
+  theme(legend.position="bottom")+
+  scale_color_brewer(palette="Accent")+
+  scale_fill_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))
+```
+
+Speed of REM different between conditions (using median)
+```{r}
+#1. CALCULATE BASELINE (using training phase) RT for REM 
+
+# get training phase data
+speedbaseline <- subset(orig.sample.a, phase==0)
+
+# count number of consecutive looks
+speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget)$lengths)
+
+# calculate diff column so we know when a look starts and stops
+speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
+
+# make sure look is over 100ms
+speedbaseline$keep <- 1
+rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
+for (i in 1:length(rownum_lookstart)){
+  if (i==length(rownum_lookstart)) { #it's the last look
+    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
+    if (lengthoflook > -25) { #shorter than 100ms, remove it
+      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
+    }
+  } else {
+    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
+    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
+    if (lengthoflook > -25) { #shorter than 100ms, remove it
+      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
+    }
+  }
+}
+
+# remove short looks
+speedbaseline <- subset(speedbaseline, keep == 1)
+
+# make sure it's look to target 
+speedbaseline <- subset(speedbaseline, lookattarget == 1)
+
+# only care about first look
+firstlook <- subset(speedbaseline, targetcount==1)
+
+# classify look as REM (after 1350ms) or not 
+firstlook$aemrem <- 0
+firstlook$aemrem[firstlook$TIMECODE_RECODE > 1350] <- 1
+
+# only care about REM
+firstlook <- subset(firstlook, aemrem == 1)
+
+# remove TIMECODE < 150 because that's just babies looking at the right location by luck
+firstlook <- subset(firstlook, TIMECODE_RECODE > 150)
+
+# remove duplicate (i.e. make more than 1 REM)
+firstlook <- firstlook %>% 
+        group_by(subID,condition,TRIAL_INDEX_RECODE) %>%
+        top_n(1, -TIMECODE_RECODE) #- for min value instead of stop value
+
+# median baseline RT for REM
+aemrembaseline <- group_by(firstlook, subID) %>%
+  summarise(
+    baselinert = median(TIMECODE_RECODE, na.rm = TRUE)
+  )
+
+#TEST PHASE
+speedbaseline <- subset(orig.sample.a, phase==1)
+
+# count number of consecutive looks
+speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget)$lengths)
+
+# calculate diff column so we know when a look starts and stops
+speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
+
+# make sure look is over 100ms
+speedbaseline$keep <- 1
+rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
+for (i in 1:length(rownum_lookstart)){
+  if (i==length(rownum_lookstart)) { #it's the last look
+    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
+    if (lengthoflook > -25) { #shorter than 100ms, remove it
+      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
+    }
+  } else {
+    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
+    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
+    if (lengthoflook > -25) { #shorter than 100ms, remove it
+      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
+    }
+  }
+}
+
+# remove short looks
+speedbaseline <- subset(speedbaseline, keep == 1)
+
+# make sure it's look to target 
+speedbaseline <- subset(speedbaseline, lookattarget == 1)
+
+# only care about first look
+firstlook <- subset(speedbaseline, targetcount==1)
+
+# classify look as REM (after 1350ms) or AEM but keep both 
+firstlook$aemrem <- 0
+firstlook$aemrem[firstlook$TIMECODE_RECODE > 1350] <- 1
+
+# remove TIMECODE < 150 because that's just babies looking at the right location by luck
+firstlook <- subset(firstlook, TIMECODE_RECODE > 150)
+
+# remove duplicate (i.e. make more than 1 REM)
+firstlook <- firstlook %>% 
+        group_by(subID,condition,TRIAL_INDEX_RECODE) %>%
+        top_n(1, -TIMECODE_RECODE) #- for min value instead of stop value
+
+# median baseline RT for REM
+rem_testphase <- group_by(firstlook, subID, condition) %>%
+  summarise(
+    testrt = median(TIMECODE_RECODE, na.rm = TRUE)
+  )
+
+#combine DF
+rem_testphase <- merge(rem_testphase, aemrembaseline)
+
+rem_testphase$timediff <- rem_testphase$baselinert - rem_testphase$testrt 
+#positive number = test phase is slower, negative number = test phase is faster
+
+foo <- group_by(rem_testphase, condition) %>%
+  summarise(
+    meanRT = mean(timediff, na.rm = TRUE),
+    seRT=sd(timediff, na.rm = TRUE)/sqrt(length(timediff))
+  )
+
+#plot
+dodge <- position_dodge(width=0.9)
+limits <- aes(ymax = meanRT + seRT, ymin=meanRT - seRT)
+
+ggplot(foo,aes(x=factor(condition),y=meanRT,color=factor(condition),fill=factor(condition)))+
+  geom_bar(stat="identity",position=dodge)+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+  ggtitle("Median")+
+  labs(x = "Condition", y = "REM: Test RT - Training RT (ms)")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  scale_y_continuous(limits=c(0,300),breaks=seq(0,300,50))+
   scale_x_discrete(breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
+  geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
+  guides(color=FALSE, fill=FALSE)+
+  geom_hline(yintercept = 0, color="black",size=1)+
+  scale_color_brewer(palette="Accent")+
+  scale_fill_brewer(palette="Accent")
+
+```
+
+Speed of REM different between conditions (using mean)
+```{r}
+#1. CALCULATE BASELINE (using training phase) RT for REM 
+
+# get training phase data
+speedbaseline <- subset(orig.sample.a, phase==0)
+
+# count number of consecutive looks
+speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget)$lengths)
+
+# calculate diff column so we know when a look starts and stops
+speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
+
+# make sure look is over 100ms
+speedbaseline$keep <- 1
+rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
+for (i in 1:length(rownum_lookstart)){
+  if (i==length(rownum_lookstart)) { #it's the last look
+    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
+    if (lengthoflook > -25) { #shorter than 100ms, remove it
+      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
+    }
+  } else {
+    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
+    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
+    if (lengthoflook > -25) { #shorter than 100ms, remove it
+      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
+    }
+  }
+}
+
+# remove short looks
+speedbaseline <- subset(speedbaseline, keep == 1)
+
+# make sure it's look to target 
+speedbaseline <- subset(speedbaseline, lookattarget == 1)
+
+# only care about first look
+firstlook <- subset(speedbaseline, targetcount==1)
+
+# classify look as REM (after 1350ms) or not 
+firstlook$aemrem <- 0
+firstlook$aemrem[firstlook$TIMECODE_RECODE > 1350] <- 1
+
+# only care about REM
+firstlook <- subset(firstlook, aemrem == 1)
+
+# remove TIMECODE < 150 because that's just babies looking at the right location by luck
+firstlook <- subset(firstlook, TIMECODE_RECODE > 150)
+
+# remove duplicate (i.e. make more than 1 REM)
+firstlook <- firstlook %>% 
+        group_by(subID,condition,TRIAL_INDEX_RECODE) %>%
+        top_n(1, -TIMECODE_RECODE) #- for min value instead of stop value
+
+# average baseline RT for each subject
+aemrembaseline <- group_by(firstlook, subID) %>%
+  summarise(
+    baselinert = mean(TIMECODE_RECODE, na.rm = TRUE)
+  )
+
+#TEST PHASE
+speedbaseline <- subset(orig.sample.a, phase==1)
+
+# count number of consecutive looks
+speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget)$lengths)
+
+# calculate diff column so we know when a look starts and stops
+speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
+
+# make sure look is over 100ms
+speedbaseline$keep <- 1
+rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
+for (i in 1:length(rownum_lookstart)){
+  if (i==length(rownum_lookstart)) { #it's the last look
+    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
+    if (lengthoflook > -25) { #shorter than 100ms, remove it
+      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
+    }
+  } else {
+    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
+    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
+    if (lengthoflook > -25) { #shorter than 100ms, remove it
+      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
+    }
+  }
+}
+
+# remove short looks
+speedbaseline <- subset(speedbaseline, keep == 1)
+
+# make sure it's look to target 
+speedbaseline <- subset(speedbaseline, lookattarget == 1)
+
+# only care about first look
+firstlook <- subset(speedbaseline, targetcount==1)
+
+# classify look as REM (after 1350ms) or not 
+firstlook$aemrem <- 0
+firstlook$aemrem[firstlook$TIMECODE_RECODE > 1350] <- 1
+
+# remove TIMECODE < 150 because that's just babies looking at the right location by luck
+firstlook <- subset(firstlook, TIMECODE_RECODE > 150)
+
+# remove duplicate (i.e. make more than 1 REM)
+firstlook <- firstlook %>% 
+        group_by(subID,condition,TRIAL_INDEX_RECODE) %>%
+        top_n(1, -TIMECODE_RECODE) #- for min value instead of stop value
+
+# average baseline RT for REM
+rem_testphase <- group_by(firstlook, subID, condition) %>%
+  summarise(
+    testrt = mean(TIMECODE_RECODE, na.rm = TRUE)
+  )
+
+#combine DF
+rem_testphase <- merge(rem_testphase, aemrembaseline)
+
+rem_testphase$timediff <- rem_testphase$baselinert - rem_testphase$testrt 
+#positive number = test phase is slower, negative number = test phase is faster
+
+foo <- group_by(rem_testphase, condition) %>%
+  summarise(
+    meanRT = mean(timediff, na.rm = TRUE),
+    seRT=sd(timediff, na.rm = TRUE)/sqrt(length(timediff))
+  )
+
+#plot
+dodge <- position_dodge(width=0.9)
+limits <- aes(ymax = meanRT + seRT, ymin=meanRT - seRT)
+
+ggplot(foo,aes(x=factor(condition),y=meanRT,color=factor(condition),fill=factor(condition)))+
+  geom_bar(stat="identity",position=dodge)+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+  ggtitle("Average")+
+  labs(x = "Condition", y = "REM: Test RT - Training RT (ms)")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
   scale_y_continuous(limits=c(0,600),breaks=seq(0,600,50))+
+  scale_x_discrete(breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
   geom_errorbar(limits, width=0.25,position = position_dodge(0.9),color="black")+
-  scale_fill_brewer(palette="Accent")+
+  guides(color=FALSE, fill=FALSE)+
+  geom_hline(yintercept = 0, color="black",size=1)+
   scale_color_brewer(palette="Accent")+
-  theme(legend.position="none")
+  scale_fill_brewer(palette="Accent")
 
 ```
 
-Time to disengagement (group average)
-Liberal
+REM trial by trial
 ```{r}
 # get test phase data
 speedbaseline <- subset(orig.sample.a, phase==1)
 
 # count number of consecutive looks
-speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget_lib)$lengths)
+speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget)$lengths)
 
 # calculate diff column so we know when a look starts and stops
 speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
@@ -1207,7 +1109,97 @@ for (i in 1:length(rownum_lookstart)){
 speedbaseline <- subset(speedbaseline, keep == 1)
 
 # make sure it's look to target 
-speedbaseline <- subset(speedbaseline, lookattarget_lib == 1)
+speedbaseline <- subset(speedbaseline, lookattarget == 1)
+
+# only care about first look
+firstlook <- subset(speedbaseline, targetcount==1)
+
+# classify look as REM (after 1350ms) or AEM 
+firstlook$aemrem <- 0
+firstlook$aemrem[firstlook$TIMECODE_RECODE > 1350] <- 1
+
+# remove TIMECODE < 150 because that's just babies looking at the right location by luck
+firstlook <- subset(firstlook, TIMECODE_RECODE > 150)
+
+# remove duplicate (i.e. make more than 1 REM)
+firstlook <- firstlook %>% 
+        group_by(subID,condition,TRIAL_INDEX_RECODE) %>%
+        top_n(1, -TIMECODE_RECODE) #- for min value instead of stop value
+
+firstlook$rt <- firstlook$TIMECODE_RECODE - 1200 #subtract 1200ms because duration of ISI
+
+#create DF
+remtrialbytrial <- group_by(firstlook, subID, condition, TRIAL_INDEX_RECODE) %>%
+  summarise(
+    rt = mean(rt, na.rm = TRUE)
+  )
+
+remtrialbytrial$timesseen <- 0
+for (j in 1:length(subs)) {
+  x <- length(remtrialbytrial$TRIAL_INDEX_RECODE[remtrialbytrial$subID==subs[j] & remtrialbytrial$condition==0])
+  xx <- length(remtrialbytrial$TRIAL_INDEX_RECODE[remtrialbytrial$subID==subs[j] & remtrialbytrial$condition==1])
+  remtrialbytrial$timesseen[remtrialbytrial$subID==subs[j] & remtrialbytrial$condition==0] <- 1:x
+  remtrialbytrial$timesseen[remtrialbytrial$subID==subs[j] & remtrialbytrial$condition==1] <- 1:xx
+}
+
+foo <- group_by(remtrialbytrial, condition, timesseen) %>%
+  summarise(
+    meanRT = mean(rt, na.rm = TRUE),
+    seRT=sd(rt, na.rm = TRUE)/sqrt(length(rt))
+  )
+
+ggplot(foo,aes(x=timesseen,y=meanRT,color=factor(condition),fill=factor(condition)))+
+  geom_line(size=1)+geom_point(size=3)+
+  ggtitle("First look to target location")+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+  labs(x = "Look number", y = "Time (ms)")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  scale_y_continuous(limits=c(-700,1000),breaks=seq(-700,1000,100))+
+  scale_x_continuous(limits=c(1,25),breaks=seq(1,25,2))+
+  scale_color_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
+  scale_fill_brewer(palette="Accent")+
+  theme(legend.position="bottom")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  guides(fill=FALSE)
+```
+
+Time to disengagement (group average)
+```{r}
+# get test phase data
+speedbaseline <- subset(orig.sample.a, phase==1)
+
+# count number of consecutive looks
+speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget)$lengths)
+
+# calculate diff column so we know when a look starts and stops
+speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
+
+# make sure look is over 100ms
+speedbaseline$keep <- 1
+rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
+for (i in 1:length(rownum_lookstart)){
+  if (i==length(rownum_lookstart)) { #it's the last look
+    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
+    if (lengthoflook > -25) { #shorter than 100ms, remove it
+      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
+    }
+  } else {
+    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
+    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
+    if (lengthoflook > -25) { #shorter than 100ms, remove it
+      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
+    }
+  }
+}
+
+# remove short looks
+speedbaseline <- subset(speedbaseline, keep == 1)
+
+# make sure it's look to target 
+speedbaseline <- subset(speedbaseline, lookattarget == 1)
 
 # create DF to keep track of when each look starts and end
 yoo <- data.frame(subID=numeric(),trialstart=numeric(),start=numeric(),trialend=numeric(), end=numeric(),condition=numeric())
@@ -1254,8 +1246,8 @@ yoo3 <- yoo2 %>%
 # length of actually looking at picture
 yoo3$lookatpicture <- yoo3$end - 1200
 
-# only keep the ones where they look at picture longer than 150ms
-yoo4 <- subset(yoo3, lookatpicture > 150)
+# only keep the ones where they look at picture longer than 100ms
+yoo4 <- subset(yoo3, lookatpicture > 100)
 
 # use the smaller value of lengthlook and lookatpicture (use parallel min function)
 yoo4 <- transform(yoo4, lookatpictureFINAL = pmin(lengthlook, lookatpicture))
@@ -1266,6 +1258,7 @@ yoo5 <- group_by(yoo4, subID, condition) %>%
     lookpicture = mean(lookatpictureFINAL, na.rm = TRUE)
   )
 
+# calculate SE and mean
 yoo6 <- group_by(yoo5, condition) %>%
   summarise(
     meanLook = mean(lookpicture, na.rm = TRUE),
@@ -1278,12 +1271,11 @@ limits <- aes(ymax = meanLook + seLook, ymin=meanLook - seLook)
 ggplot(yoo6,aes(x=factor(condition),y=meanLook,fill=factor(condition),color=factor(condition)))+
   theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
   geom_bar(stat="identity")+
-  ggtitle("Liberal")+
-  labs(x = "Condition", y = "Duration of initial look at picture (ms)")+
+  labs(x = "Condition", y = "Duration of first fixation at picture (ms)")+
   theme(plot.title = element_text(face="bold", size=20, hjust=0))+
   theme(axis.title = element_text(face="bold", size=20))+ 
   theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
   theme(legend.position="none")+
   theme(plot.title = element_text(hjust = 0.5))+
   scale_x_discrete(breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
@@ -1296,7 +1288,6 @@ ggplot(yoo6,aes(x=factor(condition),y=meanLook,fill=factor(condition),color=fact
 ```
 
 Time to disengagement (trial by trial)
-Conservative
 ```{r}
 # get test phase data
 speedbaseline <- subset(orig.sample.a, phase==1)
@@ -1376,8 +1367,8 @@ yoo3 <- yoo2 %>%
 # length of actually looking at picture
 yoo3$lookatpicture <- yoo3$end - 1200
 
-# only keep the ones where they look at picture longer than 150ms
-yoo4 <- subset(yoo3, lookatpicture > 150)
+# only keep the ones where they look at picture longer than 100ms
+yoo4 <- subset(yoo3, lookatpicture > 100)
 
 # use the smaller value of lengthlook and lookatpicture (use parallel min function)
 yoo4 <- transform(yoo4, lookatpictureFINAL = pmin(lengthlook, lookatpicture))
@@ -1410,145 +1401,12 @@ limits <- aes(ymax = meanLook + seLook, ymin=meanLook - seLook)
 
 ggplot(yoo6,aes(x=timesseen,y=meanLook,color=factor(condition),fill=factor(condition)))+
   geom_line(size=1)+geom_point(size=3)+
-  ggtitle("Conservative")+
   theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  labs(x = "Times seen", y = "Duration of initial look at picture (ms)")+
+  labs(x = "Times seen", y = "Duration of first fixation at picture (ms)")+
   theme(plot.title = element_text(face="bold", size=20, hjust=0))+
   theme(axis.title = element_text(face="bold", size=20))+ 
   theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
-  scale_y_continuous(limits=c(0,1000),breaks=seq(0,1000,100))+
-  scale_x_continuous(limits=c(1,30),breaks=seq(1,30,2))+
-  scale_color_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
-  scale_fill_brewer(palette="Accent")+
-  theme(legend.position="bottom")+
-  theme(plot.title = element_text(hjust = 0.5))+
-  guides(fill=FALSE)
-
-```
-
-Time to disengagement ((trial by trial))
-Liberal
-```{r}
-# get test phase data
-speedbaseline <- subset(orig.sample.a, phase==1)
-
-# count number of consecutive looks
-speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget_lib)$lengths)
-
-# calculate diff column so we know when a look starts and stops
-speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
-
-# make sure look is over 100ms
-speedbaseline$keep <- 1
-rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
-for (i in 1:length(rownum_lookstart)){
-  if (i==length(rownum_lookstart)) { #it's the last look
-    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  } else {
-    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
-    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  }
-}
-
-# remove short looks
-speedbaseline <- subset(speedbaseline, keep == 1)
-
-# make sure it's look to target 
-speedbaseline <- subset(speedbaseline, lookattarget_lib == 1)
-
-# create DF to keep track of when each look starts and end
-yoo <- data.frame(subID=numeric(),trialstart=numeric(),start=numeric(),trialend=numeric(), end=numeric(),condition=numeric())
-rownum_lookend <- which(speedbaseline$diff!=1) #where each look ends
-
-for (i in 1:length(rownum_lookend)){
-  if (i==1) { #it's the first look
-    info <- c(speedbaseline$subID[rownum_lookend[i]],speedbaseline$TRIAL_INDEX_RECODE[1],speedbaseline$TIMECODE_RECODE[1],speedbaseline$TRIAL_INDEX_RECODE[rownum_lookend[i]],speedbaseline$TIMECODE_RECODE[rownum_lookend[i]],speedbaseline$condition[rownum_lookend[i]])
-    yoo <- rbind.data.frame(yoo,info)
-  } else {
-    info <- c(speedbaseline$subID[rownum_lookend[i]],speedbaseline$TRIAL_INDEX_RECODE[rownum_lookend[i-1]+1],speedbaseline$TIMECODE_RECODE[rownum_lookend[i-1]+1],speedbaseline$TRIAL_INDEX_RECODE[rownum_lookend[i]],speedbaseline$TIMECODE_RECODE[rownum_lookend[i]],speedbaseline$condition[rownum_lookend[i]])
-    yoo <- rbind.data.frame(yoo,info)
-  }
-}
-
-names(yoo) <- c("subID", "trialstart","start","trialend","end","condition")
-
-# code if each look actually includes picture
-yoo$picture <- 0
-yoo$picture[yoo$start > 1199] <- 1
-yoo$picture[yoo$end > 1199] <- 1
-
-# only want looking at picture
-yoo <- subset(yoo, picture==1)
-
-# code if each look is from same trial
-yoo$sametrial <- yoo$trialend - yoo$trialstart
-
-# keep look from the same trial
-yoo2 <- subset(yoo, sametrial==0)
-
-# calculate length of look
-yoo2$lengthlook <- yoo2$end - yoo2$start
-
-# aem
-yoo2$aem <- 0
-yoo2$aem[yoo2$start < 1200] <- 1
-
-# remove duplicate (i.e. make more than 1 REM)
-yoo3 <- yoo2 %>% 
-        group_by(subID,trialstart) %>%
-        top_n(1, -start) #- for keeping min value instead of max value
-
-# length of actually looking at picture
-yoo3$lookatpicture <- yoo3$end - 1200
-
-# only keep the ones where they look at picture longer than 150ms
-yoo4 <- subset(yoo3, lookatpicture > 150)
-
-# use the smaller value of lengthlook and lookatpicture (use parallel min function)
-yoo4 <- transform(yoo4, lookatpictureFINAL = pmin(lengthlook, lookatpicture))
-
-#create DF
-yoo5 <- group_by(yoo4, subID, condition, trialstart) %>%
-  summarise(
-    lookpicture = mean(lookatpictureFINAL, na.rm = TRUE)
-  )
-
-# add in times seen
-yoo5$timesseen <- 0
-subs <- unique(yoo5$subID)
-for (j in 1:length(subs)) {
-  x <- length(yoo5$trialstart[yoo5$subID==subs[j] & yoo5$condition==0])
-  xx <- length(yoo5$trialstart[yoo5$subID==subs[j] & yoo5$condition==1])
-  yoo5$timesseen[yoo5$subID==subs[j] & yoo5$condition==0] <- 1:x
-  yoo5$timesseen[yoo5$subID==subs[j] & yoo5$condition==1] <- 1:xx
-}
-
-# get mean and SE
-yoo6 <- group_by(yoo5, condition, timesseen) %>%
-  summarise(
-    meanLook = mean(lookpicture, na.rm = TRUE),
-    seLook=sd(lookpicture, na.rm = TRUE)/sqrt(length(lookpicture))
-  )
-
-# plot
-limits <- aes(ymax = meanLook + seLook, ymin=meanLook - seLook)
-
-ggplot(yoo6,aes(x=timesseen,y=meanLook,color=factor(condition),fill=factor(condition)))+
-  geom_line(size=1)+geom_point(size=3)+
-  ggtitle("Liberal")+
-  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  labs(x = "Times seen", y = "Duration of initial look at picture (ms)")+
-  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
-  theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
   scale_y_continuous(limits=c(0,1000),breaks=seq(0,1000,100))+
   scale_x_continuous(limits=c(1,30),breaks=seq(1,30,2))+
   scale_color_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
@@ -1560,103 +1418,6 @@ ggplot(yoo6,aes(x=timesseen,y=meanLook,color=factor(condition),fill=factor(condi
 ```
 
 AEM trial by trial
-liberal
-```{r}
-# get test phase data
-speedbaseline <- subset(orig.sample.a, phase==1)
-
-# count number of consecutive looks
-speedbaseline$targetcount <- sequence(rle(speedbaseline$lookattarget_lib)$lengths)
-
-# calculate diff column so we know when a look starts and stops
-speedbaseline$diff <- c(diff(speedbaseline$targetcount),-speedbaseline$targetcount[length(speedbaseline$RECORDING_SESSION_LABEL)])
-
-# only care about eye movements initiated between 150ms - 1350ms bc of AEM
-speedbaseline$keep <- 1
-rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
-
-for (i in 1:length(rownum_lookstart)){
-  time <- speedbaseline$TIMECODE_RECODE[rownum_lookstart[i]]  #time look starts
-  if (time < 150 | time > 1350) { #remove it
-    speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-  }
-}
-
-# make sure look is longer than 100ms
-rownum_lookstart <- which(speedbaseline$targetcount==1) #where each look starts
-
-for (i in 1:length(rownum_lookstart)){
-  if (i==length(rownum_lookstart)) { #it's the last look
-    lengthoflook <- speedbaseline$diff[length(speedbaseline$subID)] #the last row of the DF
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  } else {
-    rownum_end <- rownum_lookstart[i+1] - 1 #row num when look ends
-    lengthoflook <- speedbaseline$diff[rownum_end] #length of look
-    if (lengthoflook > -25) { #shorter than 100ms, remove it
-      speedbaseline$keep[(rownum_lookstart[i]):(rownum_lookstart[i+1] - 1)] <- 0
-    }
-  }
-}
-
-# remove non AEM looks and short looks
-poo <- subset(speedbaseline, keep == 1)
-
-# remove bad eye gazes
-poo <- subset(poo, lookattarget_lib !=9)
-
-# only care about first look
-firstlook <- subset(poo, targetcount==1)
-
-# remove duplicate (i.e. make more than 1 REM)
-firstlook <- firstlook %>% 
-        group_by(subID,condition,TRIAL_INDEX_RECODE) %>%
-        top_n(1, -TIMECODE_RECODE) #- for min value instead of stop value
-
-#create DF
-aemtrialbytrial <- group_by(firstlook, subID, condition, TRIAL_INDEX_RECODE) %>%
-  summarise(
-    rt = mean(TIMECODE_RECODE, na.rm = TRUE)
-  )
-
-# add in times seen
-aemtrialbytrial$timesseen <- 0
-for (j in 1:length(subs)) {
-  x <- length(aemtrialbytrial$TRIAL_INDEX_RECODE[aemtrialbytrial$subID==subs[j] & aemtrialbytrial$condition==0])
-  xx <- length(aemtrialbytrial$TRIAL_INDEX_RECODE[aemtrialbytrial$subID==subs[j] & aemtrialbytrial$condition==1])
-  aemtrialbytrial$timesseen[aemtrialbytrial$subID==subs[j] & aemtrialbytrial$condition==0] <- 1:x
-  aemtrialbytrial$timesseen[aemtrialbytrial$subID==subs[j] & aemtrialbytrial$condition==1] <- 1:xx
-}
-
-# get mean and SE
-foo <- group_by(aemtrialbytrial, condition, timesseen) %>%
-  summarise(
-    meanRT = mean(rt, na.rm = TRUE),
-    seRT=sd(rt, na.rm = TRUE)/sqrt(length(rt))
-  )
-
-# plot
-ggplot(foo,aes(x=timesseen,y=meanRT,color=factor(condition),fill=factor(condition)))+
-  geom_line(size=1)+geom_point(size=3)+
-  ggtitle("Changes in AEM RT (Liberal)")+
-  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  labs(x = "AEM number", y = "Time (ms)")+
-  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
-  theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
-  scale_y_continuous(limits=c(150,1350),breaks=seq(150,1350,100))+
-  scale_x_continuous(limits=c(1,30),breaks=seq(1,30,2))+
-  scale_color_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
-  scale_fill_brewer(palette="Accent")+
-  theme(legend.position="bottom")+
-  theme(plot.title = element_text(hjust = 0.5))+
-  guides(fill=FALSE)
-```
-
-AEM trial by trial
-conservative
 ```{r}
 # get test phase data
 speedbaseline <- subset(orig.sample.a, phase==1)
@@ -1735,13 +1496,13 @@ foo <- group_by(aemtrialbytrial, condition, timesseen) %>%
 # plot
 ggplot(foo,aes(x=timesseen,y=meanRT,color=factor(condition),fill=factor(condition)))+
   geom_line(size=1)+geom_point(size=3)+
-  ggtitle("Changes in AEM RT (Conservative)")+
+  ggtitle("First AEM")+
   theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
   labs(x = "AEM number", y = "Time (ms)")+
   theme(plot.title = element_text(face="bold", size=20, hjust=0))+
   theme(axis.title = element_text(face="bold", size=20))+ 
   theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
   scale_y_continuous(limits=c(150,1350),breaks=seq(150,1350,100))+
   scale_x_continuous(limits=c(1,30),breaks=seq(1,30,2))+
   scale_color_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
@@ -1751,9 +1512,10 @@ ggplot(foo,aes(x=timesseen,y=meanRT,color=factor(condition),fill=factor(conditio
   guides(fill=FALSE)
 ```
 
-where are babies looking? wrong side, right side, center
+where are babies looking? wrong side, correct side, center
 ```{r}
-lookscode <- subset(pupilbreakdown, lookattarget < 9) #only care about 100ms timebins that has good data
+# test phase & looks to screen
+lookscode <- subset(orig.sample.a, phase==1 & lookattarget!=9) 
 
 #type 1 = correct AEM to target, 2 = incorrect AEM to distractor, 3 = no AEM
 #Calculate proplooking for each type of gaze (target, center, distractor)
@@ -1765,57 +1527,77 @@ lookscode$target[lookscode$lookattarget == 1] <- 1 #if lookattarget == 1, then l
 lookscode$center[lookscode$lookattarget == 5] <- 1 #if lookattarget == 5, then looking at center
 lookscode$distractor[lookscode$lookattarget == 0] <- 1 #if lookattarget == 0, then looking at distractor
 
-e2 <- ddply(lookscode,.(subID,timecode),summarise,TargProp=mean(target,na.rm = TRUE),CentProp=mean(center,na.rm = TRUE),DistProp=mean(distractor,na.rm = TRUE))
+e2 <- ddply(lookscode,.(subID,TIMECODE_RECODE,condition),summarise,TargProp=mean(target,na.rm = TRUE),CentProp=mean(center,na.rm = TRUE),DistProp=mean(distractor,na.rm = TRUE))
 
 #collapse across subjects
-e31 <- ddply(e2,.(timecode),summarise,
+e31 <- ddply(e2,.(TIMECODE_RECODE,condition),summarise,
              looking=mean(TargProp,na.rm = TRUE),
              selooking=sd(TargProp, na.rm = TRUE)/sqrt(length(TargProp)))
 e31$group <- 1
-e32 <- ddply(e2,.(timecode),summarise,
+e32 <- ddply(e2,.(TIMECODE_RECODE,condition),summarise,
              looking=mean(CentProp,na.rm = TRUE),
              selooking=sd(CentProp, na.rm = TRUE)/sqrt(length(CentProp)))
 e32$group <- 2
-e33 <- ddply(e2,.(timecode),summarise,
+e33 <- ddply(e2,.(TIMECODE_RECODE,condition),summarise,
              looking=mean(DistProp,na.rm = TRUE),
              selooking=sd(DistProp, na.rm = TRUE)/sqrt(length(DistProp)))
 e33$group <- 3
 
 efinal <- rbind(e31,e32,e33)
+epred <- subset(efinal, condition==1)
+eunpred <- subset(efinal, condition==0)
 
 #group 1 - target, 2 = center, 3 = distractor
-vlines <- c(250,1750,2550)
-ggplot(efinal,aes(x=timecode,y=looking,color=factor(group),fill=factor(group)))+
-  geom_line()+theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
-  ggtitle("Where are babies looking?")+
+
+ggplot(epred,aes(x=TIMECODE_RECODE,y=looking,color=factor(group),fill=factor(group)))+
+  geom_line(size=2)+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  ggtitle("Predictable condition")+
   labs(x = "Time", y = "% of looking")+
   theme(plot.title = element_text(face="bold", size=20, hjust=0))+
   theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=16),axis.text.y  = element_text(size=16))+
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
   theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
-  geom_ribbon(aes(ymin=looking-selooking,ymax=looking+selooking),alpha=0.4)+
-  geom_vline(xintercept = vlines)+
-  scale_x_continuous(limits=c(0,4000),breaks=seq(0,4000,500), expand = c(0, 0))+
-  scale_y_continuous(labels = scales::percent,limits=c(0,1),breaks=seq(0,1,0.2))+
-  guides(color=FALSE)+
-  scale_fill_brewer(palette="Set1",name="Where are babies looking",breaks=c("1","2","3"),labels=c("Correct side", "Center","Wrong side"))+
-  scale_color_brewer(palette="Set1")+
+  geom_vline(xintercept = 1200)+
+  scale_x_continuous(limits=c(0,2200),breaks=seq(0,2200,200))+
+  scale_y_continuous(labels=percent,limits=c(0,1),breaks=seq(0,1,0.2))+
+  scale_color_brewer(palette="Set1",name="Where are babies looking",breaks=c("1","2","3"),labels=c("Correct side", "Center","Wrong side"))+
   theme(plot.title = element_text(hjust = 0.5))+
   theme(legend.position = "top")
 
-#by condition
-e2 <- ddply(lookscode,.(subID,switch,timecode),summarise,TargProp=mean(target,na.rm = TRUE),CentProp=mean(center,na.rm = TRUE),DistProp=mean(distractor,na.rm = TRUE))
+#unpredictable
+ggplot(eunpred,aes(x=TIMECODE_RECODE,y=looking,color=factor(group),fill=factor(group)))+
+  geom_line(size=2)+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  ggtitle("Unpredictable condition")+
+  labs(x = "Time", y = "% of looking")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  geom_vline(xintercept = 1200)+
+  scale_x_continuous(limits=c(0,2200),breaks=seq(0,2200,200))+
+  scale_y_continuous(labels=percent,limits=c(0,1),breaks=seq(0,1,0.2))+
+  scale_color_brewer(palette="Set1",name="Where are babies looking",breaks=c("1","2","3"),labels=c("Correct side", "Center","Wrong side"))+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position = "top")
+```
+##############################################
+
+where are babies looking? comparing between conditions
+```{r}
+e2 <- ddply(lookscode,.(subID,condition,TIMECODE_RECODE),summarise,TargProp=mean(target,na.rm = TRUE),CentProp=mean(center,na.rm = TRUE),DistProp=mean(distractor,na.rm = TRUE))
 
 #collapse across subjects
-e31 <- ddply(e2,.(switch,timecode),summarise,
+e31 <- ddply(e2,.(condition,TIMECODE_RECODE),summarise,
             looking=mean(TargProp,na.rm = TRUE),
             selooking=sd(TargProp, na.rm = TRUE)/sqrt(length(TargProp)))
 e31$group <- 1
-e32 <- ddply(e2,.(switch,timecode),summarise,
+e32 <- ddply(e2,.(condition,TIMECODE_RECODE),summarise,
             looking=mean(CentProp,na.rm = TRUE),
             selooking=sd(CentProp, na.rm = TRUE)/sqrt(length(CentProp)))
 e32$group <- 2
-e33 <- ddply(e2,.(switch,timecode),summarise,
+e33 <- ddply(e2,.(condition,TIMECODE_RECODE),summarise,
             looking=mean(DistProp,na.rm = TRUE),
             selooking=sd(DistProp, na.rm = TRUE)/sqrt(length(DistProp)))
 e33$group <- 3
@@ -1824,24 +1606,28 @@ efinal <- rbind(e31,e32,e33)
 #group 1 - target, 2 = center, 3 = distractor
 
 split <- c(`1` = "Correct side",`2` = "Center",`3` = "Wrong side")
-ggplot(efinal,aes(x=timecode,y=looking,color=factor(switch),fill=factor(switch)))+
-  geom_line()+theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+
+ggplot(efinal,aes(x=TIMECODE_RECODE,y=looking,color=factor(condition),fill=factor(condition)))+
+  geom_line(size=2)+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
   ggtitle("Where are babies looking?")+
   labs(x = "Time", y = "% of looking")+
   theme(plot.title = element_text(face="bold", size=20, hjust=0))+
   theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=14),axis.text.y  = element_text(size=14))+
-  theme(legend.text=element_text(size=14),legend.title=element_text(size=14))+
-  geom_ribbon(aes(ymin=looking-selooking,ymax=looking+selooking),alpha=0.4)+
-  geom_vline(xintercept = vlines)+
-  scale_x_continuous(limits=c(0,4000),breaks=seq(0,4000,500), expand = c(0, 0))+
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=20),legend.title=element_text(size=20))+
+  geom_vline(xintercept = 1200)+
+  scale_x_continuous(limits=c(0,2200),breaks=seq(0,2200,200))+
   scale_y_continuous(labels = scales::percent,limits=c(0,1),breaks=seq(0,1,0.2))+
-  guides(color=FALSE)+
   facet_wrap(~group,labeller = as_labeller(split),dir="v")+
-  theme(strip.text = element_text(size=14))+
-  scale_fill_brewer(palette="Set2",name="Sub-block",breaks=c("1","2"),labels=c("Pre-switch", "Post-switch"))+
-  scale_color_brewer(palette="Set2")+
+  theme(strip.text = element_text(size=20))+
+  scale_color_brewer(palette="Accent",name="Condition",breaks=c("0","1"),labels=c("Unpredictable", "Predictable"))+
   theme(legend.position = "top")+
   theme(plot.title = element_text(hjust = 0.5))
 
 ```
+
+
+
+
+

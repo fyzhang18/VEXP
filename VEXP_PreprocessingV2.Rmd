@@ -41,8 +41,19 @@ raw <- read.csv("/Volumes/emberson/ResearchProjects/Pupillometry/VExP/V1/data/VE
 
 #relabel "condition" column as "counterbalance"
 colnames(raw)[colnames(raw)=="condition"] <- "counterbalance"
+
+#remove unuseful columns
+raw$LEFT_GAZE_X <- NULL
+raw$LEFT_GAZE_Y <- NULL
+raw$LEFT_PUPIL_SIZE <- NULL
+raw$LEFT_IN_BLINK <- NULL
+raw$RIGHT_IN_BLINK <- NULL
+raw$SAMPLE_INDEX <- NULL
 ```
 
+CHANGE FROM V1 after meeting with Lauren:
+- go with conservative method
+- calculate baseline an additional way: using when babies are looking at image during the training
 
 ```{r}
 # Make a copy of original 
@@ -66,7 +77,9 @@ for (i in 1:length(subs)){
   poo$subID[poo$RECORDING_SESSION_LABEL == subs[i]] <- i
 }
 
-# Standardize time 
+unique(poo$subID)
+
+# Standardize time (don't change this TIMECODE code for this experiment it messes up the trial_index)
 subs <- unique(poo$subID)
 
 for (j in 1:length(subs)) {
@@ -80,6 +93,7 @@ for (j in 1:length(subs)) {
   }}
 
 # For trial 1, only keep the last 2200ms, relabel the other portion as trial 0
+subs <- unique(poo$subID)
 for (j in 1:length(subs)){
   z <- max(poo$TIMECODE[poo$TRIAL_INDEX==1 & poo$subID == subs[j]])
   zz <- z-2200
@@ -90,6 +104,7 @@ for (j in 1:length(subs)){
 poo$TRIAL_INDEX_RECODE <- 99
 for (j in 1:length(subs)) {
   trials <- unique(poo$TRIAL_INDEX[poo$subID == subs[j]])
+  trials <- sort(trials)
   print(subs[j])
   for (i in 2:length(trials)) { #starting at trial 1 instead of 0
     #which row is last sample from trial x-1 
@@ -159,8 +174,9 @@ poo <- data.table(poo)
 # creates column called 'orig' with row index
 poo <- poo[, orig := .I] 
 
-# create empty DF
-yoo <- data.frame(RECORDING_SESSION_LABEL= character(),LEFT_GAZE_X= numeric(),LEFT_GAZE_Y= numeric(),LEFT_PUPIL_SIZE= numeric(),LEFT_IN_BLINK= numeric(),RIGHT_GAZE_X= numeric(),RIGHT_GAZE_Y= numeric(),RIGHT_PUPIL_SIZE= numeric(), RIGHT_IN_BLINK= numeric(), SAMPLE_INDEX= numeric(),SAMPLE_MESSAGE= character(),TIMESTAMP= numeric(),counterbalance= numeric(), imgseq= numeric(),side= numeric(),subID= numeric(), TRIAL_INDEX_RECODE= numeric(), TIMECODE_RECODE= numeric(),trial= numeric(),orig= numeric(),rleLength= numeric())
+#create empty DF
+yoo <- poo[FALSE,]
+yoo$rleLength <- NA
 
 # for each subject, create column called rleLength that counts consecutive filled or NA values (to figure out how long NA values are)
 for (i in 1:length(subs)) { 
@@ -180,8 +196,8 @@ summary(poo$RIGHT_PUPIL_SIZE)
 #RESULT = 33% blank
 
 # Relabel gazes that are off the screen as NA (screen dimensions of screen are 1280 x 1024)
-poo[, 6][poo[, 6] < 0] <- NA
-poo[, 6][poo[, 6] > 1280] <- NA
+poo[, 2][poo[, 2] < 0] <- NA
+poo[, 2][poo[, 2] > 1280] <- NA
 
 # Relabel raw pupil size as NA if the gaze coordinates are NA and it's not a blink. We interpolated some missing RIGHT_PUPIL_SIZE data because it was a blink. So don't want to replace those values with NA.
 a <- which(is.na(poo$RIGHT_GAZE_X & poo$rleLength > 100))
@@ -246,30 +262,27 @@ for (j in 1:length(subs)) {
   pooA$PUPIL_CORRECTED[pooA$subID==subs[j] & pooA$phase==1 & pooA$side==2] <- (pooA$RIGHT_PUPIL_SIZE[pooA$subID==subs[j] & pooA$phase==1 & pooA$side==2] - rightavg) / rightavg
   }
 
-poo <- pooA
-
 #relabel training pupil corrected from 999 to NA
-poo$PUPIL_CORRECTED[poo$phase==0] <- NA
+pooA$PUPIL_CORRECTED[pooA$phase==0] <- NA
+
+poo <- pooA
 ```
 
-For each trial, calculate percent trackloss (include NA and gazes that are off screen)
+For each trial, calculate percent trackloss (AKA NA and gazes that are off screen)
 ```{r}
-#slow#
+# calculate trackloss
+trackloss <- group_by(poo, subID, TRIAL_INDEX_RECODE) %>%
+  summarise(
+    missingdata = length(which(is.na(RIGHT_PUPIL_SIZE))),
+    totaldata = n()
+  )
 
-poo$trackloss <- 99
+trackloss$percentmissing <- trackloss$missingdata / trackloss$totaldata
 
-subs <- unique(poo$subID)
+trackloss$missingdata <- NULL
+trackloss$totaldata <- NULL
 
-for (j in 1:length(subs)) {
-  trials <- unique(poo$TRIAL_INDEX_RECODE[poo$subID==subs[j]])
-  print(subs[j])
-  for (i in 1:length(trials)) {
-  a <- length(which(is.na(poo$RIGHT_PUPIL_SIZE[poo$subID==subs[j] & poo$TRIAL_INDEX_RECODE==trials[i]])))  #use RIGHT_PUPIL_SIZE not other columns, this is most important
-  trackloss <- a/550 #550 because 550*4 = 2200ms
-  poo$trackloss[poo$subID==subs[j] & poo$TRIAL_INDEX_RECODE==trials[i]] <- trackloss #add info to main DF
-  }
-  }
-
+poo <- merge(poo, trackloss)
 ```
 
 Code every sample if they're looking at target (conservative)
@@ -282,7 +295,7 @@ rightx1 <- 780
 rightx2 <- 1030
 poo$lookattarget <- 9
 
-poo3 <- poo %>%
+poo2 <- poo %>%
 mutate(lookattarget = 
 ifelse(side ==1 & RIGHT_GAZE_X > leftx1 & RIGHT_GAZE_X < leftx2, 1,
 ifelse(side ==1 & RIGHT_GAZE_X > rightx1 & RIGHT_GAZE_X < rightx2, 0, 
@@ -290,73 +303,56 @@ ifelse(side ==2 & RIGHT_GAZE_X > rightx1 & RIGHT_GAZE_X < rightx2, 1,
 ifelse(side ==2 & RIGHT_GAZE_X > leftx1 & RIGHT_GAZE_X < leftx2, 0,
 ifelse(is.na(RIGHT_GAZE_X), 9, 5 ))))))
 
-poo3$lookattarget[is.na(poo3$lookattarget)] <- 9
+poo2$lookattarget[is.na(poo2$lookattarget)] <- 9
 
 #double check it worked
-blah <- subset(poo3, lookattarget==1 & side ==1)
+blah <- subset(poo2, lookattarget==1 & side ==1)
 ggplot(blah,aes(x=RIGHT_GAZE_X,y=RIGHT_GAZE_Y,color=factor(subID),fill=factor(subID)))+
   geom_point()+
   ggtitle("Left")+
   scale_x_continuous(limits=c(0,1280),breaks=seq(0,1280,200))+
   scale_y_continuous(limits=c(0,1025),breaks=seq(0,1025,100))
 
-blah <- subset(poo3, lookattarget==1 & side ==2)
+blah <- subset(poo2, lookattarget==1 & side ==2)
 ggplot(blah,aes(x=RIGHT_GAZE_X,y=RIGHT_GAZE_Y,color=factor(subID),fill=factor(subID)))+
   geom_point()+
   ggtitle("Right")+
   scale_x_continuous(limits=c(0,1280),breaks=seq(0,1280,200))+
   scale_y_continuous(limits=c(0,1025),breaks=seq(0,1025,100))
 
-blah <- subset(poo3, lookattarget==5)
+blah <- subset(poo2, lookattarget==5)
 ggplot(blah,aes(x=RIGHT_GAZE_X,y=RIGHT_GAZE_Y,color=factor(subID),fill=factor(subID)))+
   geom_point()+
   ggtitle("whatever")+
   scale_x_continuous(limits=c(0,1280),breaks=seq(0,1280,200))+
   scale_y_continuous(limits=c(0,1025),breaks=seq(0,1025,100))
-
-#calculate percentage looking at target during each trial
-foo <- group_by(poo3, subID, TRIAL_INDEX_RECODE, trial) %>%
-  summarise(
-    percentlooking=length(which(lookattarget==1))/length(trial)
-    )
 ```
 
-Code every sample if they're looking at target (liberal)
+# BASELINE OPTION B. Use the average pupil size during training trials, when image is on screen AND subject is looking at target to calculate baseline. 
 ```{r}
-#(screen dimensions of screen are 1280 x 1024)
-#might need to adjust these numbers to make the range larger for babies
-leftx2 <- 500
-rightx1 <- 780
-poo3$lookattarget_lib <- 9
+pooA <- subset(poo2, TRIAL_INDEX_RECODE >0)
+pooA$PUPIL_CORRECTED2 <- 999
 
-poo3 <- poo3 %>%
-mutate(lookattarget_lib = ifelse(side ==1 & RIGHT_GAZE_X < leftx2, 1,
-ifelse(side ==1 & RIGHT_GAZE_X > rightx1, 0, 
-ifelse(side ==2 & RIGHT_GAZE_X > rightx1, 1, 
-ifelse(side ==2 & RIGHT_GAZE_X < leftx2, 0,
-ifelse(is.na(RIGHT_GAZE_X), 9, 5 ))))))
+subs <- unique(pooA$subID)
+for (j in 1:length(subs)) {
+  leftavg <- mean(pooA$RIGHT_PUPIL_SIZE[pooA$subID==subs[j] & pooA$phase==0 & pooA$trial==1 & pooA$lookattarget==1 & pooA$side==1], na.rm = TRUE) #average pupil size for a subject, during training, when image is on the left side 
+  rightavg <- mean(pooA$RIGHT_PUPIL_SIZE[pooA$subID==subs[j] & pooA$phase==0 & pooA$trial==1 & pooA$lookattarget==1 & pooA$side==2], na.rm = TRUE) #average pupil size for a subject, during training, when image is on the right side 
+  
+  #percent pupil change from baseline for a subject
+  pooA$PUPIL_CORRECTED2[pooA$subID==subs[j] & pooA$phase==1 & pooA$side==1] <- (pooA$RIGHT_PUPIL_SIZE[pooA$subID==subs[j] & pooA$phase==1 & pooA$side==1] - leftavg) / leftavg
+  pooA$PUPIL_CORRECTED2[pooA$subID==subs[j] & pooA$phase==1 & pooA$side==2] <- (pooA$RIGHT_PUPIL_SIZE[pooA$subID==subs[j] & pooA$phase==1 & pooA$side==2] - rightavg) / rightavg
+  }
 
-poo3$lookattarget_lib[is.na(poo3$lookattarget_lib)] <- 9
+#relabel training pupil corrected from 999 to NA
+pooA$PUPIL_CORRECTED2[pooA$phase==0] <- NA
 
-#double check it worked
-blah <- subset(poo3, lookattarget_lib==1 & side ==1)
-ggplot(blah,aes(x=RIGHT_GAZE_X,y=RIGHT_GAZE_Y,color=factor(subID),fill=factor(subID)))+
-  geom_point()+
-  ggtitle("Left")+
-  scale_x_continuous(limits=c(0,1280),breaks=seq(0,1280,200))+
-  scale_y_continuous(limits=c(0,1025),breaks=seq(0,1025,100))
+poo3 <- pooA
 
-#calculate percentage looking at target during each trial
-foo2 <- group_by(poo3, subID, TRIAL_INDEX_RECODE, trial) %>%
-  summarise(
-    percentlooking=length(which(lookattarget_lib==1))/length(trial)
-    )
-
-write.csv(poo, "VEXP_1-6_Infant_Preprocessed_AllSamples.csv", row.names=TRUE) #save to 
-write.csv(poo3, "VEXP_1-6_Infant_Preprocessed_RemovedTrackloss.csv", row.names=TRUE) #save to computer
+# save to computer
+write.csv(poo3, "VEXP_1-6_Preprocessed.csv", row.names=TRUE) #save to computer
 ```
 
-Scatterplot of pupil size per subject
+Scatterplot of pupil size per subject using pupil_corrected
 ```{r}
 #replace infinite with NA
 is.na(poo3$PUPIL_CORRECTED) <- sapply(poo3$PUPIL_CORRECTED, is.infinite)
@@ -365,6 +361,32 @@ is.na(poo3$PUPIL_CORRECTED) <- sapply(poo3$PUPIL_CORRECTED, is.infinite)
 pupil.sub <- group_by(poo3, subID, TRIAL_INDEX_RECODE, phase,trial) %>%
   summarise(
     pupilsize=mean(PUPIL_CORRECTED,na.rm = TRUE)
+    )
+
+pupil.sub2 <- subset(pupil.sub, trial==1 & phase==1) #only plot pupil when they're looking at image and during test phase
+
+ggplot(pupil.sub2,aes(x=factor(subID),y=pupilsize,fill=factor(TRIAL_INDEX_RECODE),color=factor(TRIAL_INDEX_RECODE)))+
+  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+  geom_point()+
+  ggtitle("Pupil change per subject (no filter)")+
+  labs(x = "Subject", y = "Pupil change (%)")+
+  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
+  theme(axis.title = element_text(face="bold", size=20))+ 
+  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
+  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
+  theme(legend.position="none")+
+  scale_y_continuous(labels=percent)
+```
+
+Scatterplot of pupil size per subject using pupil_corrected2
+```{r}
+#replace infinite with NA
+is.na(poo3$PUPIL_CORRECTED2) <- sapply(poo3$PUPIL_CORRECTED2, is.infinite)
+
+#scatterplot of pupil size per subject
+pupil.sub <- group_by(poo3, subID, TRIAL_INDEX_RECODE, phase,trial) %>%
+  summarise(
+    pupilsize=mean(PUPIL_CORRECTED2,na.rm = TRUE)
     )
 
 pupil.sub2 <- subset(pupil.sub, trial==1 & phase==1) #only plot pupil when they're looking at image and during test phase
@@ -405,76 +427,3 @@ ggplot(goo2,aes(x=RIGHT_GAZE_X,y=meanpupil2))+
 
 ```
 
-
-#NEED TO FIX BELOW#
-Filtering: following Fawcett (2016)
-```{r}
-#1. Remove trials: more than 50% were bad
-poo <- poo3
-subs <- unique(poo$subID)
-poo$trial.p.missing <- 999
-
-for (j in 1:length(subs)) {
-  trials <- unique(poo$TRIAL_INDEX[poo$subID==subs[j]])
-  print(j)
-for (i in 1:length(trials)) {
-  p.missing <- length(which(is.na(poo$PUPIL_CORRECTED[poo$TRIAL_INDEX==trials[i] & poo$subID==subs[j]])))/length(poo$PUPIL_CORRECTED[poo$TRIAL_INDEX==trials[i] & poo$subID==subs[j]])*100
-  b <- min(which(poo$TRIAL_INDEX==trials[i] & poo$subID==subs[j]))
-  bb <- max(which(poo$TRIAL_INDEX==trials[i] & poo$subID==subs[j]))
-  poo$trial.p.missing[b:bb] <- p.missing
-}}
-poo4 <- subset(poo, trial.p.missing < 50) #remove trials with more than 50% missing
-
-#2. Remove outliers - trials more than 2.5 SDs from the mean were removed
-subs <- unique(poo4$subID)
-poo4$pupilaverage.trial <- 99
-#calculate average pupil change for each trial
-for (j in 1:length(subs)) {
-  trials <- unique(poo4$TRIAL_INDEX[poo4$subID==subs[j]])
-  print(j)
-for (i in 1:length(trials)) {
-  poo4$pupilaverage.trial[poo4$subID==subs[j] & poo4$TRIAL_INDEX==trials[i]] <- mean(poo4$PUPIL_CORRECTED[poo4$subID==subs[j]& poo4$TRIAL_INDEX==trials[i]],na.rm = TRUE)
-}}
-
-poo4$outlier <- 0
-
-for (j in 1:length(subs)) {
-  trials <- unique(poo4$TRIAL_INDEX[poo4$subID==subs[j]])
-  # calculate mean of pupil for one subject
-  avg <- mean(poo4$pupilaverage.trial[poo4$subID==subs[j]],na.rm = TRUE)
-  # calculate 2.5 SD 
-  stdev <- sd(poo4$pupilaverage.trial[poo4$subID==subs[j]],na.rm = TRUE) # one SD
-  up.stdev <- avg+(stdev*2.5) #upperbound
-  low.stdev <- avg-(stdev*2.5) #lowerbound
-  print(j)
-for (i in 1:length(trials)) {
-  if (poo4$pupilaverage.trial[poo4$subID==subs[j] & poo4$TRIAL_INDEX==trials[i]] > up.stdev) {
-    poo4$outlier[poo4$subID==subs[j] & poo4$TRIAL_INDEX==trials[i]] <- 99
-  }
-  if (poo4$pupilaverage.trial[poo4$subID==subs[j] & poo4$TRIAL_INDEX==trials[i]] < low.stdev) {
-    poo4$outlier[poo4$subID==subs[j] & poo4$TRIAL_INDEX==trials[i]] <- 99
-  }
-}
-  #warnings can be ignored
-}
-
-unique(poo4$outlier)
-
-#remove outliers
-poo5 <- subset(poo4, outlier == 0)
-
-pupil.sub <- ddply(poo5,.(subID,TRIAL_INDEX),summarise,pupilsize=mean(PUPIL_CORRECTED,na.rm = TRUE))
-
-ggplot(pupil.sub,aes(x=factor(subID),y=pupilsize,fill=factor(TRIAL_INDEX),color=factor(TRIAL_INDEX)))+
-  theme_bw()+theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
-  geom_point()+ggtitle("Pupil change per subject (removing trials > 2.5 SD)")+
-  labs(x = "Subject", y = "Pupil change (%)")+
-  theme(plot.title = element_text(face="bold", size=20, hjust=0))+
-  theme(axis.title = element_text(face="bold", size=20))+ 
-  theme(axis.text.x  = element_text(size=20),axis.text.y  = element_text(size=20))+
-  theme(legend.text=element_text(size=16),legend.title=element_text(size=16))+
-  theme(legend.position="none")+
-  scale_y_continuous(labels=percent,limits=c(-0.6,1.5),breaks=seq(-0.6,1.5,0.5))
-
-write.csv(poo5, "Pinwheel14_11-17_Infant_Preprocessed_RemovedOutliers.csv", row.names=TRUE) #save to
-```
